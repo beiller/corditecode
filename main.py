@@ -28,15 +28,13 @@ import string
 from datetime import datetime
 
 # Load environment variables with priority order
-# 1. .env.example (defaults)
+# 1. .env.defaults
 # 2. .env (user overrides - if exists)
 try:
     from dotenv import load_dotenv
     
-    # First load defaults from .env.example
-    load_dotenv(".env.example", override=False)
+    load_dotenv(".env.defaults", override=False)
     
-    # Then load .env if it exists (overrides .env.example)
     if os.path.exists(".env"):
         load_dotenv(".env", override=True)
     
@@ -58,9 +56,11 @@ from tools import (
     run_bash,
     load_model,
     unload_model,
+    get_loaded_model,
     list_models,
     load_skills,
-    make_tool
+    make_tool,
+    conversation_search
 )
 
 from download_model import download_model, search_model
@@ -68,6 +68,7 @@ from download_model import download_model, search_model
 
 
 CURRENT_MODEL = os.environ.get("CURRENT_MODEL", "Qwen_Qwen3.5-27B-Q4_1")
+CONTEXT_SIZE = 16384
 
 def is_llama_running(base_url: str) -> bool:
     """Check if llama-server is already running by making a request to the API."""
@@ -81,8 +82,26 @@ def is_llama_running(base_url: str) -> bool:
 
 def load_model_and_set(model_name: str):
     global CURRENT_MODEL
+    loaded_model = get_loaded_model()
+    if loaded_model:
+        unload_model(loaded_model)
     load_model(model_name)
     CURRENT_MODEL = model_name
+
+
+def get_context_size() -> int:
+    """Get the context size from llama-server."""
+    base_url = os.getenv("LLAMA_BASE_URL")
+    
+    req = urllib.request.Request(
+        f"{base_url}/props",
+        method="GET"
+    )
+    
+    with urllib.request.urlopen(req, timeout=30) as response:
+        result = json.loads(response.read().decode('utf-8'))
+        return result["default_generation_settings"]["n_ctx"]
+
 
 # ---------------------------------------------------------------------------
 # Types – Chat Completions API
@@ -169,6 +188,10 @@ async def stream_chat_completion(
     body: ChatCompletionRequest = {
         "model": CURRENT_MODEL,
         "messages": msgs,
+        "temperature": 0.6,
+        "top_k": 20,
+        "top_p": 0.95,
+        "repeat_penalty": 1.2,
         "tools": tools,
         "tool_choice": "auto",
         "stream": True,
@@ -294,15 +317,15 @@ def execute_tool_calls(
 
 def build_tools() -> tuple[list[Tool], dict[str, ToolHandler]]:
     """Build the full tools list and registry by reloading skills from disk."""
-    tools: list[Tool] = [tool_from_function(run_bash), tool_from_function(download_model),
-                           tool_from_function(load_model), tool_from_function(unload_model), 
+    tools: list[Tool] = [tool_from_function(conversation_search), tool_from_function(run_bash), tool_from_function(download_model),
+                           tool_from_function(load_model), 
                            tool_from_function(list_models), tool_from_function(search_model),
                            tool_from_function(reset_session)]
     registry: dict[str, ToolHandler] = {
+        "conversation_search": conversation_search,
         "run_bash": run_bash,
                 "download_model": download_model,
         "load_model": load_model_and_set,
-        "unload_model": unload_model,
         "list_models": list_models,
         "search_model": search_model,
         "reset_session": reset_session,
@@ -382,7 +405,7 @@ async def handle_message(
         base_url, user_id, messages, session_id
     )
     
-    if approximate_token_count(json.dumps(messages)) > 25000:
+    if approximate_token_count(json.dumps(messages)) > int(CONTEXT_SIZE * 0.7):
         logger.info("Compacting conversation")
         filename = archive_conversation(session_id, messages)
         new_messages = [
@@ -442,7 +465,9 @@ def reset_session(user_id: UserID = "", session_id: SessionID = ""):
     logger.info(f"Clear session for user_id {user_id}")
     messages: List[Message] = get_user_messages(user_id)
     filepath: str = archive_conversation(session_id, messages)
-    set_user_messages(user_id, [])
+    messages.clear()
+    set_user_messages(user_id, messages)
+    write_conversation(session_id, messages)
     return json.dumps({"status":  f"Message history cleared and archived at {filepath}"})
 
 
@@ -450,6 +475,7 @@ async def main_init(
     resume: bool = False
 ) -> SessionID:
     global interrupts
+    global CONTEXT_SIZE
     """Run the conversation loop, using the provided I/O callbacks."""
     # Load from environment variables if not provided
     base_url = os.getenv("LLAMA_BASE_URL")
@@ -482,6 +508,8 @@ async def main_init(
 
     logger.info(f"Loading model {CURRENT_MODEL}")
     load_model_and_set(CURRENT_MODEL)
+    CONTEXT_SIZE = get_context_size()
+
     await asyncio.sleep(3)
     return session_id
 

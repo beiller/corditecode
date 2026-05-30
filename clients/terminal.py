@@ -1,11 +1,10 @@
 
-
 import base64
 import re
 from io import BytesIO
 from textual.app import App, ComposeResult
 from textual.widgets import Input, RichLog
-from textual.events import Paste
+from textual.events import Paste, Key
 import asyncio
 import signal
 import logging
@@ -34,7 +33,7 @@ class ChatApp(App):
         self.query_one(Input).focus()
 
         container = self.query_one("#chat_container")
-        await container.mount(Static(f"[bold cyan]✦  C H A T[/]"))
+        await container.mount(Static(f"[bold cyan]⟡  C H A T[/]"))
         await container.mount(Static(f"[grey]Local AI Assistant[/]"))
 
         self.state = ChatApp.STATE_IDLE
@@ -67,6 +66,12 @@ class ChatApp(App):
         widget = Markdown("") if markdown else Static("")
         await container.mount(widget)
         self.current_response = widget
+
+
+    def key_control_c(self, event: Key) -> None:
+        event.stop()
+        event.prevent_default()
+        on_ctrl_c()
 
 
     async def on_llm_text(self, user_id, role, token, chunk):

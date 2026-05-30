@@ -128,6 +128,21 @@ def unload_model(model_name: str) -> str:
         return json.dumps({"success": False, "error": str(e)})
 
 
+def get_loaded_model() -> str | None:
+    """Return the loaded model name, or None if no model is currently loaded."""
+    base_url = os.getenv("LLAMA_BASE_URL")
+    try:
+        req = urllib.request.Request(f"{base_url}/v1/models", method="GET")
+        with urllib.request.urlopen(req, timeout=30) as response:
+            result = json.loads(response.read().decode('utf-8'))
+            for model in result.get("data", []):
+                if model.get("status", {}).get("value") == "loaded":
+                    return model["id"]
+            return None
+    except Exception:
+        return None
+
+
 def list_models() -> str:
     """List all available models in llama-server router mode.
     
@@ -194,3 +209,13 @@ def load_skills(
         registry[skill_name] = _make_handler(body)
 
     return tools, registry
+
+
+from search import search as _search
+
+def conversation_search(
+    keyword: str
+) -> str:
+    """Searches for a keyword and returns snippets and the relevant file that contians the conversation in question. For the full context, and only if needed, read the file"""
+    return _search(keyword)
+

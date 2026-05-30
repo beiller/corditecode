@@ -83,10 +83,8 @@ def download_model(
 if __name__ == "__main__":
     from dotenv import load_dotenv
     
-    # First load defaults from .env.example
-    load_dotenv(".env.example", override=False)
+    load_dotenv(".env.defaults", override=False)
     
-    # Then load .env if it exists (overrides .env.example)
     if os.path.exists(".env"):
         load_dotenv(".env", override=True)
 

@@ -3,7 +3,8 @@ llama.cpp
 __pycache__
 nohup.out
 .env
-conversations/*.txt
-conversations/*.json
+^conversations/conversations_go_here
+conversations/*
+
 .cache
 models
