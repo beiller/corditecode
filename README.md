@@ -1,8 +1,8 @@
-# Agent1 Server Architecture
+# Cordite Server Architecture
 
 ## Overview
 
-Agent1 is a plugin-based AI assistant server that communicates with multiple client types (Terminal, Discord, IRC) through a unified message queue system. The server processes user queries through an LLM and executes tool calls via skills.
+Cordite is a plugin-based AI assistant server that communicates with multiple client types (Terminal, Discord, IRC) through a unified message queue system. The server processes user queries through an LLM and executes tool calls via skills.
 
 **Key Features:**
 - Multi-platform support (Terminal, Discord, IRC)
@@ -15,8 +15,8 @@ Agent1 is a plugin-based AI assistant server that communicates with multiple cli
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-repo/agent1.git
-cd agent1
+git clone https://github.com/your-repo/corditecode.git
+cd corditecode
 
 # Run the one-click setup script
 ./setup.sh
@@ -42,26 +42,21 @@ The setup script handles most prerequisites, but you should have:
 
 ### Option 1: Podman Container (requires podman or docker)
 
-**Start llama-server**
-./llama_server.sh &
-
-Edit the script if you use docker.
+This is a quick terminal way to run:
 
 ```bash
 # WARNING: Uses host network (insecure but more secure than filesystem access)
-./agent1.sh
+./corditecode
 ```
+
+This has no files so you want to pull in a project using git perhaps first. The conversation history / session is stored locally in ./conversations
 
 ### Option 2: Local Python Environment (After Setup) (Dangerous)
 
 ```bash
-# Activate virtual environment
-source venv/bin/activate
-
-# Run the server
+# Run the terminal UI (alteratively use discord_client or irc_client)
 python main.py terminal
 ```
-
 
 ## Configuration
 

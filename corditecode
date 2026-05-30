@@ -1,0 +1,32 @@
+#!/bin/bash
+
+# Load environment variables from .env file if it exists
+if [ -f .env.defaults ]; then
+    source .env.defaults
+fi
+
+if [ -f .env ]; then
+    source .env
+fi
+
+# Start llama server in background
+./start_llama.sh > /dev/null 2>&1 &
+LLAMA_PID=$!
+
+# Cleanup on exit
+cleanup() {
+    echo "Stopping llama-server..."
+    kill $LLAMA_PID 2>/dev/null
+    wait $LLAMA_PID 2>/dev/null
+}
+trap cleanup EXIT
+
+# Wait for llama-server to be ready
+echo "Waiting for llama-server..."
+until curl -s http://127.0.0.1:8080/health > /dev/null 2>&1; do
+    sleep 1
+done
+echo "llama-server ready"
+
+podman build -t corditecode .
+podman run -it --rm --env-file .env.defaults --network=host -v ${LLAMA_MODELS_DIR}:/app/models -v ./conversations:/app/conversations corditecode
