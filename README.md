@@ -1,4 +1,6 @@
-# Cordite Code
+![corditecode](assets/logo.jpg)
+
+### Local-first coding assistant
 
 ![corditecode](assets/ss1.jpg)
 
@@ -23,8 +25,11 @@ cd corditecode
 # Run the one-click setup script
 ./setup.sh
 
-# Start the server
-python main.py terminal
+# Start the terminal coding agent in a safe container (no files, you will need to git clone)
+./corditecode
+
+# Alternatively, to run very unsafe (will have fill permissions of your current user)
+# python main.py terminal
 ```
 
 That's it! The `setup.sh` script will:
