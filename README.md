@@ -1,4 +1,6 @@
-# Cordite Server Architecture
+# Cordite Code
+
+![corditecode](assets/ss1.jpg)
 
 ## Overview
 
