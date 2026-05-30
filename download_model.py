@@ -29,9 +29,12 @@ def search_model(search_query: str, limit: int = 10):
     return json.dumps({"result": models}, default=str)
 
 
+DEFAULT_REPO_ID = "bartowski/Qwen_Qwen3.6-27B-GGUF"
+DEFAULT_FILENAME = "Qwen_Qwen3.6-27B-Q4_K_M.gguf"
+
 def download_model(
-    repo_id: str = "bartowski/Qwen_Qwen3.5-9B-GGUF", 
-    filename: str = "Qwen_Qwen3.5-9B-Q4_K_M.gguf"
+    repo_id: str = DEFAULT_REPO_ID, 
+    filename: str = DEFAULT_FILENAME
 ):
     """Download a GGUF model from Hugging Face. Provide the repo_id and filename. Feel free to search huggingface first (curl) to find the appropriate values. """
     from huggingface_hub import hf_hub_download
@@ -53,30 +56,28 @@ def download_model(
     print(f"📄 Filename: {filename}")
     print(f"💾 Save to: {save_dir.absolute()}")
     
-    try:
-        # Download the model file with local_dir_copy=True for a clean copy
-        local_path = hf_hub_download(
-            repo_id=repo_id,
-            filename=filename,
-            cache_dir=save_dir,
-            force_download=True,
-            # This ensures we get the actual file, not a symlink
-            local_dir=str(save_dir)
-        )
-        
-        print(f"\n✅ Download completed!")
-        print(f"   File saved to: {local_path}")
-        
-        # Get actual file size
-        if os.path.exists(local_path):
-            size_mb = os.path.getsize(local_path) / (1024*1024)
-            print(f"   File size: {size_mb:.2f} MB")
-        return local_path
-        
-    except Exception as e:
-        print(f"\n❌ Error downloading model: {e}")
-        return None
+    # Download the model file with local_dir_copy=True for a clean copy
+    local_path = hf_hub_download(
+        repo_id=repo_id,
+        filename=filename,
+        cache_dir=save_dir,
+        force_download=True,
+        # This ensures we get the actual file, not a symlink
+        local_dir=str(save_dir)
+    )
     
+    print(f"\n✅ Download completed!")
+    print(f"   File saved to: {local_path}")
+    
+    # Get actual file size
+    if os.path.exists(local_path):
+        size_mb = os.path.getsize(local_path) / (1024*1024)
+        print(f"   File size: {size_mb:.2f} MB")
+    else:
+        print(f"\n❌ Error downloading model.")
+        return None
+    return local_path
+
 
 
 if __name__ == "__main__":
