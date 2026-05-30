@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""Function-calling server for llama-server's OpenAI-compatible chat completions API.
-
-This module handles HTTP transport, tool management, and the conversation loop.
-It is display-agnostic – all output goes through an `emit` callback provided
-by the client (e.g. terminal.py).
-
-Start llama-server first, e.g.:
-    ./llama.cpp/build/bin/llama-server --jinja --fim-qwen-30b-default
-"""
 
 from __future__ import annotations
 
@@ -108,6 +99,7 @@ def get_context_size() -> int:
 # ---------------------------------------------------------------------------
 
 from main_types import * 
+
 from conversation import (
     approximate_token_count,
     archive_conversation,
