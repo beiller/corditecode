@@ -139,46 +139,11 @@ async def get_response() -> Tuple[str, str, bool]:
 
 ### Skill System
 
-Skills are located in the `skills/` directory as `.md` files. Each file defines a tool with name, description, and parameters. Skills are auto-loaded at runtime via `load_skills()`.
+Skills are located in the `skills/` directory as `.md` files. Each file defines a tool with name, description, and parameters. Skills are auto-loaded at runtime via `load_skills()`. They can just be free-form. They are reloaded every chat cycle as well, so you can use it for anything.
 
-**Built-in Skills:**
-- `run_bash` - Executes shell commands
+**Built-in Skills (experimental, don't work well):**
 - `curl_skill` - Fetches webpage URLs
 - `mux_skill` - Starts long-running commands in background tmux sessions
-- `vector_search` - Searches conversation history (see below)
-
-### Vector Search (`vector_search.py`)
-
-A semantic search system for retrieving relevant conversation history.
-
-**How it Works:**
-1. **Chunking:** Conversations are split into paragraph-aware chunks (~300 chars each)
-2. **Indexing:** TF-IDF vectorization creates searchable embeddings
-3. **Search:** Cosine similarity matches queries against stored chunks
-4. **Context:** Returns matching snippets with configurable context windows
-
-**Usage:**
-```python
-from vector_search import vector_search
-
-# Search for specific topics
-results = vector_search(
-    keyword_to_search="how to install",
-    context_size=1000,  # chars of context around matches
-    top_k=3,            # number of documents to return
-    top_j_per_doc=2     # matches per document
-)
-```
-
-**Features:**
-- Paragraph-aware chunking for better semantic matching
-- No caching (fresh index on every search)
-- Configurable context window size
-- Backslash penalty to reduce code snippet noise
-- Multi-document support with ranked results
-
-**Files Indexed:**
-All `.txt` files in the `conversations/` directory are automatically included in searches.
 
 ## File Structure
 
@@ -218,9 +183,7 @@ All `.txt` files in the `conversations/` directory are automatically included in
 ### Adding New Skills
 
 1. Create a `.md` file in `skills/` directory
-2. Define tool name, description, and parameters using function-calling format
-3. Implement the skill function in Python
-4. Register it in the server (auto-loaded on startup)
+2. Define tool name, description, and parameters using function-calling format, or use any freeform text
 
 ### Adding New Clients
 
