@@ -8,7 +8,7 @@ import urllib.request
 from typing import List
 import pathlib
 from main_types import *
-
+import re
 
 
 
@@ -31,16 +31,47 @@ def make_tool(
 # ---------------------------------------------------------------------------
 # Tool implementations
 # ---------------------------------------------------------------------------
+BLOCKED = [
+    r"\brm\b", r"\brmdir\b", r"\bdd\b",
+    r"\bmkfs\b", r"\bshred\b", r"\btruncate\b",
+    r"\bwipe\b", r"\bmv\b.*(/dev|/sys|/proc)",
+    r">\s*/dev/(s|h|v|x)d",   # redirect to disk devices
+    r":\(\)\{.*\}",            # fork bomb
+    r"\bchmod\s+[0-7]*0\b",    # removing all perms
+    r"\bchown\b.*root",
+    r"\bsudo\b", r"\bsu\b",
+    r"\bcurl\b.*\|\s*(ba)?sh", # curl | bash
+    r"\bwget\b.*-O.*\|\s*sh",
+]
+def is_safe(cmd: str) -> tuple[bool, str | None]:
+    for pattern in BLOCKED:
+        if re.search(pattern, cmd):
+            return False, pattern
+    return True, None
 
-
-def run_bash(command: str) -> str:
-    """Run a bash command and return its output."""
+def run_bash(command: str, allow_unsafe_commands=False) -> str:
+    """Run a shell command and return its output. 
+- Do not allow unsafe commands unless specifically granted permission.
+- Only if you have got explicit consent from the user, use `allow_unsafe_commands=True`
+- This will run in bash, and the limit is ~10kb so try to limit verbose output
+"""
+    #MAX_RETURN_CHARS = 10_000
+    if not allow_unsafe_commands and not is_safe(command):
+        return {
+            "stdout": "",
+            "stderr": "",
+            "returncode": None,
+            "error": f"Permission denied. Ask the user's permission to run this command, and if granted, call this function again using allow_unsafe_commands=True",
+        }
     try:
         result = subprocess.run(
             command,
             shell=True,
+            executable="/bin/bash",
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
             stdin=subprocess.DEVNULL,
         )
@@ -60,6 +91,32 @@ def run_bash(command: str) -> str:
                 "error": f"Command execution failed: {str(e)}",
             }
         )
+
+
+
+def read_file(file_path: str, line_start: int|None = None, line_end: int|None = None) -> str:
+    """Read a file. Use absolute file paths. Use this over bash. Use optional line_start and line_end to read a chunk of a file."""
+    try:
+        with open(file_path) as fh:
+            return json.dumps({"status": "success", "result": "\n".join(fh.readlines()[line_start or 0:line_end or -1])})
+    except Exception as e:
+        return json.dumps({"status": "error", "description": str(e)})
+
+
+
+
+def write_file(file_path: str, file_contents: str) -> str:
+    """Write a file
+- Use this instead of bash to avoid mangling text
+- Use absolute file paths.
+- BE CAUTIOUS WRITING FILES, check with the user first. 
+"""
+    try:
+        with open(file_path, 'w') as fh:
+            fh.write(file_contents)
+        return '{"success": true}'
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)})
 
 
 def load_model(model_name: str) -> str:

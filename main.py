@@ -45,6 +45,8 @@ logger = logging.getLogger()
 # Import tools from tools.py
 from tools import (
     run_bash,
+    write_file,
+    read_file,
     load_model,
     unload_model,
     get_loaded_model,
@@ -192,7 +194,8 @@ async def stream_chat_completion(
         async with session.post(
             f"{base_url}/v1/chat/completions",
             json=body,
-            headers={"Content-Type": "application/json"}
+            headers={"Content-Type": "application/json"},
+            timeout=aiohttp.ClientTimeout(sock_read=None, sock_connect=5*60, connect=5*60)
         ) as resp:
             logger.debug(f"loading: {base_url}/v1/chat/completions")
             async for line in resp.content:
@@ -275,9 +278,7 @@ def emit(user_id: UserID, role: str, content: str, chunk: bool = False) -> None:
 def execute_tool_calls(
     assistant_msg: Message,
     registry: dict[str, ToolHandler],
-    user_id: UserID,
-    *,
-    streamed: bool = False,
+    user_id: UserID
 ) -> list[Message]:
     """Return the assistant message + one tool-result message per call."""
     tool_calls: list[ToolCallRef] = assistant_msg.get("tool_calls", [])
@@ -310,13 +311,15 @@ def execute_tool_calls(
 def build_tools() -> tuple[list[Tool], dict[str, ToolHandler]]:
     """Build the full tools list and registry by reloading skills from disk."""
     tools: list[Tool] = [tool_from_function(conversation_search), tool_from_function(run_bash), tool_from_function(download_model),
-                           tool_from_function(load_model), 
+                           tool_from_function(load_model), tool_from_function(write_file), tool_from_function(read_file),
                            tool_from_function(list_models), tool_from_function(search_model),
                            tool_from_function(reset_session)]
     registry: dict[str, ToolHandler] = {
         "conversation_search": conversation_search,
+        "write_file": write_file,
+        "read_file": read_file,
         "run_bash": run_bash,
-                "download_model": download_model,
+        "download_model": download_model,
         "load_model": load_model_and_set,
         "list_models": list_models,
         "search_model": search_model,
@@ -351,7 +354,7 @@ async def run_tool_loop(
         assistant_msg = await consume_stream(chunks, user_id, emit)
         emit(user_id, "assistant", "", False) # send a final empty message so the client knows the end of message.
         tool_msgs = execute_tool_calls(
-            assistant_msg, registry, user_id, streamed=True,
+            assistant_msg, registry, user_id
         )
 
         if not tool_msgs:
@@ -398,18 +401,20 @@ async def handle_message(
     )
     
     if approximate_token_count(json.dumps(messages)) > int(CONTEXT_SIZE * 0.7):
-        logger.info("Compacting conversation")
-        filename = archive_conversation(session_id, messages)
-        new_messages = [
-            {
-                "role": "assistant", 
-                "content": f"The previous conversation was archived to {filename}",
-                "timestamp": datetime.now().isoformat()
-            },
-            *messages[-4:],
-        ]
-        messages.clear()
-        messages.extend(new_messages)
+        #logger.info("Compacting conversation")
+        #filename = archive_conversation(session_id, messages)
+        #new_messages = [
+        #    {
+        #        "role": "assistant", 
+        #        "content": f"The previous conversation was archived to {filename}",
+        #        "timestamp": datetime.now().isoformat()
+        #    },
+        #    *messages[-4:],
+        #]
+        #messages.clear()
+        #messages.extend(new_messages)
+        size = approximate_token_count(json.dumps(messages)) 
+        logger.info(f"Warning: context size is {size} of {CONTEXT_SIZE}") 
 
     write_conversation(session_id, messages)
 
@@ -613,8 +618,11 @@ async def async_main(client_type: str, resume: bool = False):
 
 
 if __name__ == "__main__":
+    import os
+
+    exec_dir = os.path.dirname(os.path.abspath(__file__))
     def load_config():
-        with open("config.json") as fh:
+        with open(f"{exec_dir}/config.json") as fh:
             return json.loads(fh.read())
     config = load_config()
     import sys

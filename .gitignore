@@ -8,3 +8,6 @@ conversations/*
 
 .cache
 models
+*.pem
+aws_cmd.py
+

@@ -16,6 +16,7 @@ LLAMA_MODELS_DIR="${LLAMA_MODELS_DIR:-./models}"
 "$LLAMA_SERVER_PATH" \
     --models-dir "$LLAMA_MODELS_DIR" \
     --parallel 1 \
+    --context-shift \
     --ctx-size ${CTX_SIZE} \
     --n-gpu-layers ${GPU_LAYERS} \
     --host 0.0.0.0 --port 8080 \
