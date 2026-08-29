@@ -50,8 +50,7 @@ fi
 echo ""
 log_info "Step 4: Creating virtual environment..."
 if [ -d "venv" ]; then
-    log_warn "   Existing 'venv' directory found. Removing..."
-    rm -rf venv
+    log_warn "   Existing 'venv' directory found. Consider removing it."
 fi
 
 python -m venv venv
