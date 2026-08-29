@@ -90,10 +90,12 @@ def get_context_size() -> int:
         f"{base_url}/props",
         method="GET"
     )
-    
+    context_size = int(os.environ.get("CTX_SIZE") or "16384")
     with urllib.request.urlopen(req, timeout=30) as response:
         result = json.loads(response.read().decode('utf-8'))
-        return result["default_generation_settings"]["n_ctx"]
+        if result["default_generation_settings"]["n_ctx"] > 0:
+            context_size = result["default_generation_settings"]["n_ctx"]
+    return context_size
 
 
 # ---------------------------------------------------------------------------
