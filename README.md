@@ -4,6 +4,9 @@
 
 ![corditecode](assets/ss1.jpg)
 
+# NOTICE
+This software is alpha quality and may delete files on your system.
+
 ## Overview
 
 Cordite is a plugin-based AI assistant server that communicates with multiple client types (Terminal, Discord, IRC) through a unified message queue system. The server processes user queries through an LLM and executes tool calls via skills.
@@ -19,7 +22,7 @@ Cordite is a plugin-based AI assistant server that communicates with multiple cl
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-repo/corditecode.git
+git clone https://github.com/beiller/corditecode.git
 cd corditecode
 
 # Run the one-click setup script
