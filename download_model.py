@@ -29,12 +29,11 @@ def search_model(search_query: str, limit: int = 10):
     return json.dumps({"result": models}, default=str)
 
 
-DEFAULT_REPO_ID = "bartowski/Qwen_Qwen3.6-27B-GGUF"
-DEFAULT_FILENAME = "Qwen_Qwen3.6-27B-Q4_K_M.gguf"
+
 
 def download_model(
-    repo_id: str = DEFAULT_REPO_ID, 
-    filename: str = DEFAULT_FILENAME
+    repo_id: str, 
+    filename: str
 ):
     """Download a GGUF model from Hugging Face. Provide the repo_id and filename. Feel free to search huggingface first (curl) to find the appropriate values. """
     from huggingface_hub import hf_hub_download
@@ -46,8 +45,9 @@ def download_model(
     save_dir.mkdir(parents=True, exist_ok=True)
 
     if (save_dir / Path(filename)).exists():
-        print(f"\n⚠️ File Already Exists!")
-        return
+        print(f"\n⚠️ File Already Exists! Redownload [y/N]?")
+        if input().lower() != "y":
+            return
     
     print("=" * 60)
     print("📥 Downloading GGUF Model from Hugging Face")
@@ -88,4 +88,7 @@ if __name__ == "__main__":
     if os.path.exists(".env"):
         load_dotenv(".env", override=True)
 
-    download_model()
+    MODEL_DOWNLOAD_REPO_ID = os.environ.get("MODEL_DOWNLOAD_REPO_ID") or "bartowski/Qwen3.8-27B-GGUF"
+    MODEL_DOWNLOAD_FILENAME = os.environ.get("MODEL_DOWNLOAD_FILENAME") or "Qwen3.8-27B-Q4_K_M.gguf"
+
+    download_model(MODEL_DOWNLOAD_REPO_ID, MODEL_DOWNLOAD_FILENAME)
