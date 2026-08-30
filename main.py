@@ -417,20 +417,20 @@ async def handle_message(
     )
     
     if approximate_token_count(json.dumps(messages)) > int(CONTEXT_SIZE * 0.7):
-        #logger.info("Compacting conversation")
-        #filename = archive_conversation(session_id, messages)
-        #new_messages = [
-        #    {
-        #        "role": "assistant", 
-        #        "content": f"The previous conversation was archived to {filename}",
-        #        "timestamp": datetime.now().isoformat()
-        #    },
-        #    *messages[-4:],
-        #]
-        #messages.clear()
-        #messages.extend(new_messages)
+        logger.info("Compacting conversation")
+        filename = archive_conversation(session_id, messages)
+        new_messages = [
+           {
+               "role": "assistant", 
+               "content": f"The previous conversation was archived to {filename}",
+               "timestamp": datetime.now().isoformat()
+           },
+           *messages[-4:],
+        ]
+        messages.clear()
+        messages.extend(new_messages)
         size = approximate_token_count(json.dumps(messages)) 
-        logger.warning(f"Context size is {size} of {CONTEXT_SIZE}") 
+        logger.info(f"Context size is {size} of {CONTEXT_SIZE}") 
 
     write_conversation(session_id, messages)
 

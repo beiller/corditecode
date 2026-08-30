@@ -131,6 +131,8 @@ def load_model(model_name: str) -> str:
     Returns:
         JSON string with success status and details
     """
+    base_url = os.getenv("LLAMA_BASE_URL")
+
     try:
         url = f"{base_url}/models/load"
         data = json.dumps({"model": model_name}).encode('utf-8')
