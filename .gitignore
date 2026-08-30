@@ -10,4 +10,5 @@ conversations/*
 models
 *.pem
 aws_cmd.py
+*.tar.gz
 
