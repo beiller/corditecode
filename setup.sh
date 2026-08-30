@@ -10,6 +10,17 @@
 
 set -e  # Exit on error
 
+SILENT=0
+for arg in "$@"; do
+    case "$arg" in
+        -y|--yes) SILENT=1 ;;
+    esac
+done
+if [ ! -t 0 ]; then
+    SILENT=1
+fi
+export SILENT
+
 echo "=========================================="
 echo "🔧 Llama.cpp Environment Setup Script"
 echo "=========================================="

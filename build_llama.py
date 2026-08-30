@@ -105,8 +105,15 @@ def check_model_exists(model_path: Path) -> bool:
     return False
 
 
+def is_silent() -> bool:
+    return os.environ.get("SILENT") == "1"
+
+
 def ask_user(question: str) -> bool:
     """Ask user a yes/no question."""
+    if is_silent():
+        print(f"{question} [auto-yes in silent mode]")
+        return True
     while True:
         response = input(f"{question} [Y/n]: ").strip().lower()
         if response in ('', 'y', 'yes'):
@@ -128,11 +135,14 @@ def build_llama():
     print("🦙 llama.cpp Download & Build Script")
     print("=" * 60)
     
-    # Clean up old build directory for fresh start
+    # Skip rebuild if a working build already exists
+    binaries = BUILD_DIR / "build" / "bin"
     if BUILD_DIR.exists():
-        
-        print(f"\n⚠️ Build exists, delete {BUILD_DIR} if you want to rebuild. ")
-        return
+        if binaries.exists() and any(b.is_file() for b in binaries.iterdir()):
+            print(f"\n\u2705 Existing build found, skipping rebuild.")
+            return True
+        print(f"\n\u26a0\ufe0f Build directory exists but no binaries found. Delete {BUILD_DIR} to rebuild.")
+        return False
         
     # Detect CPU cores for parallel build
     cpu_cores = get_cpu_cores()

@@ -45,6 +45,9 @@ def download_model(
     save_dir.mkdir(parents=True, exist_ok=True)
 
     if (save_dir / Path(filename)).exists():
+        if os.environ.get("SILENT") == "1":
+            print("⚠️ File already exists, skipping download (silent mode).")
+            return
         print(f"\n⚠️ File Already Exists! Redownload [y/N]?")
         if input().lower() != "y":
             return
