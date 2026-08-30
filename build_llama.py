@@ -177,7 +177,7 @@ def build_llama():
     
     # Step 4: Build the project with parallel jobs
     if not run_command(
-        ["cmake", "--build", "build", "--config", "Release", "-j", str(cpu_cores)],
+        ["cmake", "--build", "build", "--config", "Release", "-t", "llama-server", "-j", str(cpu_cores)],
         f"Building llama.cpp with {cpu_cores} parallel jobs (this may take a few minutes)...",
         cwd=BUILD_DIR
     ):
