@@ -85,16 +85,29 @@ def load_model_and_set(model_name: str):
 def get_context_size() -> int:
     """Get the context size from llama-server."""
     base_url = os.getenv("LLAMA_BASE_URL")
-    
-    req = urllib.request.Request(
-        f"{base_url}/props",
-        method="GET"
-    )
     context_size = int(os.environ.get("CTX_SIZE") or "16384")
-    with urllib.request.urlopen(req, timeout=30) as response:
-        result = json.loads(response.read().decode('utf-8'))
-        if result["default_generation_settings"]["n_ctx"] > 0:
-            context_size = result["default_generation_settings"]["n_ctx"]
+    try:
+        req = urllib.request.Request(
+            f"{base_url}/v1/models",
+            method="GET"
+        )
+        with urllib.request.urlopen(req, timeout=30) as response:
+            result = json.loads(response.read().decode('utf-8'))
+        models = result.get("data", [])
+        for preferred in (True, False):
+            for model in models:
+                if preferred and model.get("id") != CURRENT_MODEL:
+                    continue
+                n_ctx = (model.get("meta") or {}).get("n_ctx", 0)
+                if n_ctx > 0:
+                    context_size = n_ctx
+                    break
+            else:
+                continue
+            break
+    except Exception:
+        logger.warning(f"Could not read a context size, returning default of {context_size}") 
+    logger.info(f"Context size: {context_size}") 
     return context_size
 
 
@@ -417,7 +430,7 @@ async def handle_message(
         #messages.clear()
         #messages.extend(new_messages)
         size = approximate_token_count(json.dumps(messages)) 
-        logger.info(f"Warning: context size is {size} of {CONTEXT_SIZE}") 
+        logger.warning(f"Context size is {size} of {CONTEXT_SIZE}") 
 
     write_conversation(session_id, messages)
 
