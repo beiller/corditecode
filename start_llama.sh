@@ -20,7 +20,8 @@ LLAMA_MODELS_DIR="${LLAMA_MODELS_DIR:-./models}"
     --ctx-size ${CTX_SIZE} \
     --n-gpu-layers ${GPU_LAYERS} \
     --host 0.0.0.0 --port 8080 \
-    --flash-attn 1 --cache-type-k q4_0 --cache-type-v q4_0
+    --flash-attn 1
+    # --cache-type-k q4_0 --cache-type-v q4_0
     #-m ${LLAMA_MODELS_DIR}/${CURRENT_MODEL}.gguf
 
 #  \
