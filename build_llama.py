@@ -122,7 +122,7 @@ def build_llama():
     # Configuration
     REPO_URL = "https://github.com/ggml-org/llama.cpp.git"
     BUILD_DIR = Path("llama.cpp")
-    COMMIT_HASH = "49bfddeca18e62fa3d39114a23e9fcbdf8a22388"  # Pin to specific commit
+    COMMIT_HASH = "c589f0ed10c643678c4707dd160c21ac7633ebc0"  # Pin to specific commit
     
     print("=" * 60)
     print("🦙 llama.cpp Download & Build Script")
