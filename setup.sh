@@ -85,9 +85,9 @@ pip install -r requirements.txt
 log_info "   Dependencies installed successfully"
 
 # Step 6: Run build_llama.py
-#echo ""
-#log_info "Step 6: Running build_llama.py..."
-#python build_llama.py
+echo ""
+log_info "Step 6: Running build_llama.py..."
+python build_llama.py
 
 log_info ""
 log_info "=========================================="
