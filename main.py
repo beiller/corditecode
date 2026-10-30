@@ -46,6 +46,7 @@ logger = logging.getLogger()
 from tools import (
     run_bash,
     write_file,
+    edit_file,
     read_file,
     load_model,
     unload_model,
@@ -83,7 +84,7 @@ def load_model_and_set(model_name: str):
 
 
 def get_context_size() -> int:
-    """Get the context size from llama-server."""
+    """Get the context size from llama-server or vLLM."""
     base_url = os.getenv("LLAMA_BASE_URL")
     context_size = int(os.environ.get("CTX_SIZE") or "16384")
     try:
@@ -98,7 +99,8 @@ def get_context_size() -> int:
             for model in models:
                 if preferred and model.get("id") != CURRENT_MODEL:
                     continue
-                n_ctx = (model.get("meta") or {}).get("n_ctx", 0)
+                # llama.cpp: nested under "meta"; vLLM: top-level field
+                n_ctx = (model.get("meta") or {}).get("n_ctx", 0) or model.get("max_model_len", 0)
                 if n_ctx > 0:
                     context_size = n_ctx
                     break
@@ -106,8 +108,8 @@ def get_context_size() -> int:
                 continue
             break
     except Exception:
-        logger.warning(f"Could not read a context size, returning default of {context_size}") 
-    logger.info(f"Context size: {context_size}") 
+        logger.warning(f"Could not read a context size, returning default of {context_size}")
+    logger.info(f"Context size: {context_size}")
     return context_size
 
 
@@ -327,12 +329,13 @@ def execute_tool_calls(
 def build_tools() -> tuple[list[Tool], dict[str, ToolHandler]]:
     """Build the full tools list and registry by reloading skills from disk."""
     tools: list[Tool] = [tool_from_function(conversation_search), tool_from_function(run_bash), tool_from_function(download_model),
-                           tool_from_function(load_model), tool_from_function(write_file), tool_from_function(read_file),
+                           tool_from_function(load_model), tool_from_function(write_file), tool_from_function(edit_file), tool_from_function(read_file),
                            tool_from_function(list_models), tool_from_function(search_model),
                            tool_from_function(reset_session)]
     registry: dict[str, ToolHandler] = {
         "conversation_search": conversation_search,
         "write_file": write_file,
+        "edit_file": edit_file,
         "read_file": read_file,
         "run_bash": run_bash,
         "download_model": download_model,

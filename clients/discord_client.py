@@ -41,11 +41,17 @@ user_id_mapping = {}
 
 @rate_limit(10, 10)
 async def reply_rate_limit(user_id: str, message):
+    if message == "": 
+        logger.warning("(discord) discarded empty message")
+        return
     global client, user_id_mapping
     channel_id, message_id = user_id_mapping[user_id].split(':')
     channel = await client.fetch_channel(channel_id)
     original_message = await channel.fetch_message(message_id)
-    await original_message.reply(message)
+    try:
+        await original_message.reply(message)
+    except Exception as e:
+        logger.error(f"(discord) error sending message: {e}")
 
 
 def split_message(message: str, chunk_size: int = 1500) -> list[str]:
