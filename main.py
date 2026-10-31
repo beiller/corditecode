@@ -16,6 +16,7 @@ from collections.abc import Iterator
 from typing import AsyncIterator, Callable, get_type_hints, Protocol, TypedDict
 import random
 import string
+import uuid
 import types
 from datetime import datetime
 from typing import Union
@@ -47,6 +48,7 @@ logger = logging.getLogger()
 # Import tools from tools.py
 from tools import (
     run_bash,
+    change_working_directory,
     write_file,
     edit_file,
     read_file,
@@ -218,6 +220,7 @@ async def stream_chat_completion(
         "tools": tools,
         "tool_choice": "auto",
         "stream": True,
+        "stream_options": {"include_usage": True},
     }
     async with aiohttp.ClientSession() as session:
         async with session.post(
@@ -241,13 +244,16 @@ async def consume_stream(
     chunks: AsyncIterator[ChatCompletionChunk],
     user_id: UserID,
     emit_fn: Callable[[str, str, str, bool], None] = None
-) -> Message:
-    """Consume streamed chunks, emit tokens, and return the assembled Message."""
+) -> tuple[Message, Usage | None]:
+    """Consume streamed chunks, emit tokens, and return the assembled Message and usage."""
     role = "assistant"
     content_parts: list[str] = []
     tool_calls_accum: dict[int, ToolCallRef] = {}
+    usage: Usage | None = None
 
     async for chunk in chunks:
+        if chunk.get("usage"):
+            usage = chunk["usage"]
         if not chunk.get("choices"):
             continue
         delta = chunk["choices"][0]["delta"]
@@ -292,7 +298,7 @@ async def consume_stream(
         msg["content"] = None
     if tool_calls_accum:
         msg["tool_calls"] = [tool_calls_accum[i] for i in sorted(tool_calls_accum)]
-    return msg
+    return msg, usage
 
 
 # ---------------------------------------------------------------------------
@@ -346,13 +352,14 @@ def build_tools() -> tuple[list[Tool], dict[str, ToolHandler]]:
     tools: list[Tool] = [tool_from_function(conversation_search), tool_from_function(run_bash), tool_from_function(download_model),
                            tool_from_function(load_model), tool_from_function(write_file), tool_from_function(edit_file), tool_from_function(read_file),
                            tool_from_function(list_models), tool_from_function(search_model),
-                           tool_from_function(reset_session)]
+                           tool_from_function(reset_session), tool_from_function(change_working_directory)]
     registry: dict[str, ToolHandler] = {
         "conversation_search": conversation_search,
         "write_file": write_file,
         "edit_file": edit_file,
         "read_file": read_file,
         "run_bash": run_bash,
+        "change_working_directory": change_working_directory,
         "download_model": download_model,
         "load_model": load_model_and_set,
         "list_models": list_models,
@@ -385,7 +392,9 @@ async def run_tool_loop(
         tools, registry = build_tools()
         chunks = stream_chat_completion(base_url, messages, tools, session_id, user_id)
 
-        assistant_msg = await consume_stream(chunks, user_id, emit)
+        assistant_msg, usage = await consume_stream(chunks, user_id, emit)
+        if usage is not None:
+            usage_events.put_nowait((user_id, usage))
         emit(user_id, "assistant", "", False) # send a final empty message so the client knows the end of message.
         tool_msgs = execute_tool_calls(
             assistant_msg, registry, user_id
@@ -420,9 +429,22 @@ async def handle_message(
     user_input: str,
     base_url: str,
     user_id: UserID, 
-    session_id: SessionID
+    session_id: SessionID,
+    msg_id: str
 ) -> None:
     """Handle a user message event: append it, run the tool loop, emit the reply."""
+    try:
+        await _handle_message_inner(user_input, base_url, user_id, session_id)
+    finally:
+        turn_events.put_nowait(msg_id)
+
+
+async def _handle_message_inner(
+    user_input: str,
+    base_url: str,
+    user_id: UserID, 
+    session_id: SessionID
+) -> None:
     messages = get_user_messages(user_id)
     # Add timestamp when user types the message
     user_msg = make_user_message(user_input)
@@ -461,11 +483,16 @@ from typing import Dict, List, Tuple
 
 queries = asyncio.Queue()
 responses = asyncio.Queue()
+usage_events = asyncio.Queue()
+turn_events = asyncio.Queue()
 interrupts = {}
 
-async def queue_query(user_id: UserID, query: str) -> None:
+async def queue_query(user_id: UserID, query: str) -> str:
+    """Queue a user message and return its id (for turn-event tracking)."""
     global queries
-    await queries.put((user_id, query))
+    msg_id = uuid.uuid4().hex[:8]
+    await queries.put((user_id, query, msg_id))
+    return msg_id
 
 
 async def get_reponse() -> Tuple[UserID, str, str, bool]:
@@ -557,7 +584,7 @@ async def main(
             try:
                 await asyncio.sleep(0.1)
                 on_ready()
-                user_id, user_input = await queries.get()
+                user_id, user_input, msg_id = await queries.get()
                 if user_id in interrupts: del interrupts[user_id]
             except asyncio.CancelledError:
                 logger.warning("Main loop cancelled")
@@ -573,10 +600,11 @@ async def main(
             if user_input is None:
                 break
             if not user_input.strip():
+                turn_events.put_nowait(msg_id)
                 continue
             try:
                 await handle_message(
-                    user_input, base_url, user_id, session_id
+                    user_input, base_url, user_id, session_id, msg_id
                 )
             except asyncio.CancelledError:
                 logger.warning("Message handling cancelled")
@@ -612,6 +640,11 @@ async def async_main(client_type: str, resume: bool = False):
     
 
     session_id = await main_init(resume=resume)
+
+    # Expose usage side-channel and context size to the client (ignored by clients that don't use them)
+    client.usage_events = usage_events
+    client.turn_events = turn_events
+    client.context_size = CONTEXT_SIZE
 
     # 1. Create your two tasks
     init_task = asyncio.create_task(client.init(queue_query, get_reponse, set_interrupt))

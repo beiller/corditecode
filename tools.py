@@ -95,6 +95,21 @@ def run_bash(command: str, allow_unsafe_commands=False) -> str:
 
 
 
+def change_working_directory(directory: str) -> str:
+    """Change the process working directory. Relative paths are resolved against the current working directory.
+- The target must be an existing directory.
+- Affects relative path resolution for all subsequent file tools and bash commands.
+"""
+    target = directory if os.path.isabs(directory) else os.path.abspath(directory)
+    try:
+        if not os.path.isdir(target):
+            return json.dumps({"success": False, "error": f"Not a directory: {target}"})
+        os.chdir(target)
+        return json.dumps({"success": True, "working_directory": os.getcwd()})
+    except Exception as e:
+        return json.dumps({"success": False, "error": str(e)})
+
+
 DEFAULT_READ_LIMIT = 2000
 MAX_LINE_LENGTH = 2000
 MAX_BYTES = 50 * 1024
