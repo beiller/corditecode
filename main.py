@@ -2,36 +2,33 @@
 
 from __future__ import annotations
 
-import argparse
 import inspect
 import json
-import pathlib
 import os
-import signal
-import subprocess
-import sys
-import urllib.request
-import aiohttp
-from collections.abc import Iterator
-from typing import AsyncIterator, Callable, get_type_hints, Protocol, TypedDict
+import pathlib
 import random
 import string
-import uuid
+import subprocess
+import sys
 import types
+import urllib.request
+import uuid
 from datetime import datetime
-from typing import Union
+from typing import AsyncIterator, Callable, Union, get_type_hints
+
+import aiohttp
 
 # Load environment variables with priority order
 # 1. .env.defaults
 # 2. .env (user overrides - if exists)
 try:
     from dotenv import load_dotenv
-    
+
     load_dotenv(".env.defaults", override=False)
-    
+
     if os.path.exists(".env"):
         load_dotenv(".env", override=True)
-    
+
     # Set fallback defaults if neither file has them
     if "LLAMA_BASE_URL" not in os.environ:
         os.environ["LLAMA_BASE_URL"] = "http://127.0.0.1:8080"
@@ -40,38 +37,37 @@ except ImportError:
     if "LLAMA_BASE_URL" not in os.environ:
         os.environ["LLAMA_BASE_URL"] = "http://127.0.0.1:8080"
 import logging
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 
 
-
 # Import tools from tools.py
+from download_model import download_model, search_model
 from tools import (
-    run_bash,
     change_working_directory,
-    write_file,
+    conversation_search,
     edit_file,
-    read_file,
-    load_model,
-    unload_model,
     get_loaded_model,
     list_models,
+    load_model,
     load_skills,
     make_tool,
-    conversation_search
+    read_file,
+    run_bash,
+    unload_model,
+    write_file,
 )
-
-from download_model import download_model, search_model
-
-
 
 CURRENT_MODEL = os.environ.get("CURRENT_MODEL", "Qwen_Qwen3.5-27B-Q4_1")
 CONTEXT_SIZE = 16384
+
 
 def is_llama_running(base_url: str) -> bool:
     """Check if llama-server is already running by making a request to the API."""
     try:
         import urllib.request
+
         response = urllib.request.urlopen(f"{base_url}/v1/models", timeout=2)
         return response.status == 200
     except Exception:
@@ -92,12 +88,9 @@ def get_context_size() -> int:
     base_url = os.getenv("LLAMA_BASE_URL")
     context_size = int(os.environ.get("CTX_SIZE") or "16384")
     try:
-        req = urllib.request.Request(
-            f"{base_url}/v1/models",
-            method="GET"
-        )
+        req = urllib.request.Request(f"{base_url}/v1/models", method="GET")
         with urllib.request.urlopen(req, timeout=30) as response:
-            result = json.loads(response.read().decode('utf-8'))
+            result = json.loads(response.read().decode("utf-8"))
         models = result.get("data", [])
         for preferred in (True, False):
             for model in models:
@@ -121,14 +114,23 @@ def get_context_size() -> int:
 # Types – Chat Completions API
 # ---------------------------------------------------------------------------
 
-from main_types import * 
-
 from conversation import (
     approximate_token_count,
     archive_conversation,
-    write_conversation,
-    read_conversation,
     get_last_conversation_session_id,
+    read_conversation,
+    write_conversation,
+)
+from main_types import (
+    ChatCompletionChunk,
+    ChatCompletionRequest,
+    Message,
+    SessionID,
+    Tool,
+    ToolCallRef,
+    ToolHandler,
+    Usage,
+    UserID,
 )
 
 # ---------------------------------------------------------------------------
@@ -191,23 +193,18 @@ SKILLS_DIR = ROOT_DIR / "skills"
 
 
 async def stream_chat_completion(
-    base_url: str,
-    messages: list[Message],
-    tools: list[Tool], 
-    session_id: SessionID,
-    user_id: UserID
+    base_url: str, messages: list[Message], tools: list[Tool], session_id: SessionID, user_id: UserID
 ) -> AsyncIterator[ChatCompletionChunk]:
     """Send a streaming chat completion request, yielding SSE chunks asynchronously."""
     system_content = SYSTEM_MD.read_text() if SYSTEM_MD.exists() else ""
-    
+
     # Add dynamic context to system prompt (keep stable across calls so the server's prompt cache can be reused)
     session_context = f"\n\nActive session: {session_id}Active user_id: {user_id}\n\n"
     system_content += session_context
 
     # Strip timestamps before sending to LLM API
     msgs = [make_system_message(system_content)] + [
-        {k: v for k, v in m.items() if k != "timestamp"} 
-        for m in messages if m.get("role") != "system"
+        {k: v for k, v in m.items() if k != "timestamp"} for m in messages if m.get("role") != "system"
     ]
     body: ChatCompletionRequest = {
         "model": CURRENT_MODEL,
@@ -227,7 +224,7 @@ async def stream_chat_completion(
             f"{base_url}/v1/chat/completions",
             json=body,
             headers={"Content-Type": "application/json"},
-            timeout=aiohttp.ClientTimeout(sock_read=None, sock_connect=5*60, connect=5*60)
+            timeout=aiohttp.ClientTimeout(sock_read=None, sock_connect=5 * 60, connect=5 * 60),
         ) as resp:
             logger.debug(f"loading: {base_url}/v1/chat/completions")
             async for line in resp.content:
@@ -241,9 +238,7 @@ async def stream_chat_completion(
 
 
 async def consume_stream(
-    chunks: AsyncIterator[ChatCompletionChunk],
-    user_id: UserID,
-    emit_fn: Callable[[str, str, str, bool], None] = None
+    chunks: AsyncIterator[ChatCompletionChunk], user_id: UserID, emit_fn: Callable[[str, str, str, bool], None] = None
 ) -> tuple[Message, Usage | None]:
     """Consume streamed chunks, emit tokens, and return the assembled Message and usage."""
     role = "assistant"
@@ -266,7 +261,7 @@ async def consume_stream(
             content_parts.append(text)
             if emit_fn:
                 emit_fn(user_id, role, text, True)
-            #hack?
+            # hack?
             await asyncio.sleep(0)
 
         for dtc in delta.get("tool_calls", []):
@@ -310,18 +305,13 @@ def emit(user_id: UserID, role: str, content: str, chunk: bool = False) -> None:
     responses.put_nowait((user_id, role, content, chunk))
 
 
-def execute_tool_calls(
-    assistant_msg: Message,
-    registry: dict[str, ToolHandler],
-    user_id: UserID
-) -> list[Message]:
+def execute_tool_calls(assistant_msg: Message, registry: dict[str, ToolHandler], user_id: UserID) -> list[Message]:
     """Return the assistant message + one tool-result message per call."""
     tool_calls: list[ToolCallRef] = assistant_msg.get("tool_calls", [])
     if not tool_calls:
         return []
 
     results: list[Message] = [assistant_msg]
-    content = assistant_msg.get("content")
     for tc in tool_calls:
         name = tc["function"]["name"]
         args: dict[str, str] = json.loads(tc["function"]["arguments"])
@@ -331,7 +321,8 @@ def execute_tool_calls(
             emit(user_id, "error", f"Unknown tool: {name}")
         else:
             args_short = ", ".join(f"{k}={v!r}" for k, v in args.items())
-            if len(args_short) > 200: args_short = args_short[0:200] + "..."
+            if len(args_short) > 200:
+                args_short = args_short[0:200] + "..."
             emit(user_id, "tool", f"{name}({args_short})")
             try:
                 output = handler(**args)
@@ -349,10 +340,19 @@ def execute_tool_calls(
 
 def build_tools() -> tuple[list[Tool], dict[str, ToolHandler]]:
     """Build the full tools list and registry by reloading skills from disk."""
-    tools: list[Tool] = [tool_from_function(conversation_search), tool_from_function(run_bash), tool_from_function(download_model),
-                           tool_from_function(load_model), tool_from_function(write_file), tool_from_function(edit_file), tool_from_function(read_file),
-                           tool_from_function(list_models), tool_from_function(search_model),
-                           tool_from_function(reset_session), tool_from_function(change_working_directory)]
+    tools: list[Tool] = [
+        tool_from_function(conversation_search),
+        tool_from_function(run_bash),
+        tool_from_function(download_model),
+        tool_from_function(load_model),
+        tool_from_function(write_file),
+        tool_from_function(edit_file),
+        tool_from_function(read_file),
+        tool_from_function(list_models),
+        tool_from_function(search_model),
+        tool_from_function(reset_session),
+        tool_from_function(change_working_directory),
+    ]
     registry: dict[str, ToolHandler] = {
         "conversation_search": conversation_search,
         "write_file": write_file,
@@ -372,15 +372,10 @@ def build_tools() -> tuple[list[Tool], dict[str, ToolHandler]]:
     return tools, registry
 
 
-async def run_tool_loop(
-    base_url: str,
-    user_id: UserID,
-    messages: List[Message],
-    session_id: SessionID
-) -> str:
+async def run_tool_loop(base_url: str, user_id: UserID, messages: List[Message], session_id: SessionID) -> str:
     """Stream messages, handle tool calls in a loop, return final text."""
     global interrupts
-    max_calls = 60
+    max_calls = 200
     tool_counter = 0
 
     while True:
@@ -395,10 +390,8 @@ async def run_tool_loop(
         assistant_msg, usage = await consume_stream(chunks, user_id, emit)
         if usage is not None:
             usage_events.put_nowait((user_id, usage))
-        emit(user_id, "assistant", "", False) # send a final empty message so the client knows the end of message.
-        tool_msgs = execute_tool_calls(
-            assistant_msg, registry, user_id
-        )
+        emit(user_id, "assistant", "", False)  # send a final empty message so the client knows the end of message.
+        tool_msgs = execute_tool_calls(assistant_msg, registry, user_id)
 
         if not tool_msgs:
             text = assistant_msg.get("content") or ""
@@ -414,7 +407,7 @@ async def run_tool_loop(
             tm_copy["timestamp"] = datetime.now().isoformat()
             tool_msgs_with_ts.append(tm_copy)
         messages.extend(tool_msgs_with_ts)
-        
+
         tool_counter += 1
         if tool_counter > max_calls:
             emit(user_id, "info", "too many tool calls, giving up")
@@ -425,13 +418,7 @@ async def run_tool_loop(
             return text
 
 
-async def handle_message(
-    user_input: str,
-    base_url: str,
-    user_id: UserID, 
-    session_id: SessionID,
-    msg_id: str
-) -> None:
+async def handle_message(user_input: str, base_url: str, user_id: UserID, session_id: SessionID, msg_id: str) -> None:
     """Handle a user message event: append it, run the tool loop, emit the reply."""
     try:
         await _handle_message_inner(user_input, base_url, user_id, session_id)
@@ -439,12 +426,7 @@ async def handle_message(
         turn_events.put_nowait(msg_id)
 
 
-async def _handle_message_inner(
-    user_input: str,
-    base_url: str,
-    user_id: UserID, 
-    session_id: SessionID
-) -> None:
+async def _handle_message_inner(user_input: str, base_url: str, user_id: UserID, session_id: SessionID) -> None:
     messages = get_user_messages(user_id)
     # Add timestamp when user types the message
     user_msg = make_user_message(user_input)
@@ -452,25 +434,25 @@ async def _handle_message_inner(
     messages.append(user_msg)
     write_conversation(session_id, messages)
 
-    reply = await run_tool_loop( # modifies messages
+    await run_tool_loop(  # modifies messages
         base_url, user_id, messages, session_id
     )
-    
+
     if approximate_token_count(json.dumps(messages)) > int(CONTEXT_SIZE * 0.7):
         logger.info("Compacting conversation")
         filename = archive_conversation(session_id, messages)
         new_messages = [
-           {
-               "role": "assistant", 
-               "content": f"The previous conversation was archived to {filename}",
-               "timestamp": datetime.now().isoformat()
-           },
-           *messages[-4:],
+            {
+                "role": "assistant",
+                "content": f"The previous conversation was archived to {filename}",
+                "timestamp": datetime.now().isoformat(),
+            },
+            *messages[-4:],
         ]
         messages.clear()
         messages.extend(new_messages)
-        size = approximate_token_count(json.dumps(messages)) 
-        logger.info(f"Context size is {size} of {CONTEXT_SIZE}") 
+        size = approximate_token_count(json.dumps(messages))
+        logger.info(f"Context size is {size} of {CONTEXT_SIZE}")
 
     write_conversation(session_id, messages)
 
@@ -486,6 +468,7 @@ responses = asyncio.Queue()
 usage_events = asyncio.Queue()
 turn_events = asyncio.Queue()
 interrupts = {}
+
 
 async def queue_query(user_id: UserID, query: str) -> str:
     """Queue a user message and return its id (for turn-event tracking)."""
@@ -505,15 +488,19 @@ async def set_interrupt(user_id: UserID) -> None:
 
 
 #  USER DATABASE
-def init_registry() -> Tuple[Callable[[UserID], list[Message]], Callable[[UserID, list[Messages]], None]]:
+def init_registry() -> Tuple[Callable[[UserID], list[Message]], Callable[[UserID, list[Message]], None]]:
     user_registry: Dict[UserID, list[Message]] = {}
 
     def get_user_messages(user_id: UserID):
-        if user_id not in user_registry: user_registry[user_id] = []
+        if user_id not in user_registry:
+            user_registry[user_id] = []
         return user_registry.get(user_id)
+
     def set_user_messages(user_id: UserID, messages: List[Message]):
         user_registry[user_id] = messages
+
     return get_user_messages, set_user_messages
+
 
 get_user_messages, set_user_messages = init_registry()
 
@@ -526,12 +513,10 @@ def reset_session(user_id: UserID = "", session_id: SessionID = ""):
     messages.clear()
     set_user_messages(user_id, messages)
     write_conversation(session_id, messages)
-    return json.dumps({"status":  f"Message history cleared and archived at {filepath}"})
+    return json.dumps({"status": f"Message history cleared and archived at {filepath}"})
 
 
-async def main_init(
-    resume: bool = False
-) -> SessionID:
+async def main_init(resume: bool = False) -> SessionID:
     global interrupts
     global CONTEXT_SIZE
     """Run the conversation loop, using the provided I/O callbacks."""
@@ -542,25 +527,27 @@ async def main_init(
     # Check if llama-server is already running
     global llama_proc
     llama_proc = None
-    
+
     if is_llama_running(base_url):
         logger.info("llama-server is already running, skipping start")
     else:
         # Try starting llama-server in background with fallback to setup.sh
         logger.info("Attempting to start llama-server via start_llama.sh...")
-        llama_proc = subprocess.Popen("./start_llama.sh", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        llama_proc = subprocess.Popen(
+            "./start_llama.sh", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True
+        )
         await asyncio.sleep(2)  # Wait briefly for it to start/fail without blocking
         if llama_proc.poll() is None:
             logger.info("start_llama.sh started successfully")
         else:
             logger.warning(f"start_llama.sh exited with code {llama_proc.returncode}, trying setup.sh once...")
             subprocess.run(["./setup.sh"], shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    
-    #messages: list[Message] = []
 
-    #emit("info", f"Chat (Ctrl-C to cancel, twice to quit) - URL: {base_url}")
+    # messages: list[Message] = []
 
-    session_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+    # emit("info", f"Chat (Ctrl-C to cancel, twice to quit) - URL: {base_url}")
+
+    session_id = "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
     if resume:
         session_id = get_last_conversation_session_id()
 
@@ -575,7 +562,7 @@ async def main_init(
 async def main(
     on_ready: Callable = None,
     resume: bool = False,
-    session_id = None,
+    session_id=None,
 ) -> None:
     base_url = os.getenv("LLAMA_BASE_URL")
     session_resumed = False
@@ -585,13 +572,14 @@ async def main(
                 await asyncio.sleep(0.1)
                 on_ready()
                 user_id, user_input, msg_id = await queries.get()
-                if user_id in interrupts: del interrupts[user_id]
+                if user_id in interrupts:
+                    del interrupts[user_id]
             except asyncio.CancelledError:
                 logger.warning("Main loop cancelled")
                 break
             except KeyboardInterrupt:
                 break
-            
+
             # load the conversation up once hacky TODO
             if resume and not session_resumed:
                 set_user_messages(user_id, read_conversation(session_id))
@@ -603,9 +591,7 @@ async def main(
                 turn_events.put_nowait(msg_id)
                 continue
             try:
-                await handle_message(
-                    user_input, base_url, user_id, session_id, msg_id
-                )
+                await handle_message(user_input, base_url, user_id, session_id, msg_id)
             except asyncio.CancelledError:
                 logger.warning("Message handling cancelled")
                 break
@@ -637,7 +623,6 @@ async def async_main(client_type: str, resume: bool = False):
         from clients import irc_client as client
     else:
         raise ValueError(f"Unknown client type: {client_type}")
-    
 
     session_id = await main_init(resume=resume)
 
@@ -652,10 +637,7 @@ async def async_main(client_type: str, resume: bool = False):
     tasks = {init_task, main_task}
 
     try:
-        done, pending = await asyncio.wait(
-            tasks, 
-            return_when=asyncio.FIRST_COMPLETED
-        )
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         for task in pending:
             task.cancel()
         if pending:
@@ -688,11 +670,14 @@ if __name__ == "__main__":
     import os
 
     exec_dir = os.path.dirname(os.path.abspath(__file__))
+
     def load_config():
         with open(f"{exec_dir}/config.json") as fh:
             return json.loads(fh.read())
+
     config = load_config()
     import sys
+
     if len(sys.argv) > 1:
         config["client"] = sys.argv[1]
     resume: bool = False

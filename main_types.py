@@ -1,4 +1,4 @@
-from typing import Callable, get_type_hints, Protocol, TypedDict
+from typing import Callable, Protocol, TypedDict
 
 
 class PropertyDef(TypedDict, total=False):
