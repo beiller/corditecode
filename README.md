@@ -138,6 +138,7 @@ async def queue_query(query: str) -> None:
     global queries
     await queries.put(query)
 
+
 async def get_response() -> Tuple[str, str, bool]:
     return await responses.get()
 ```

@@ -199,7 +199,7 @@ async def stream_chat_completion(
     system_content = SYSTEM_MD.read_text() if SYSTEM_MD.exists() else ""
 
     # Add dynamic context to system prompt (keep stable across calls so the server's prompt cache can be reused)
-    session_context = f"\n\nActive session: {session_id}Active user_id: {user_id}\n\n"
+    session_context = f"\n\nActive session: {session_id}"
     system_content += session_context
 
     # Strip timestamps before sending to LLM API
@@ -516,7 +516,7 @@ def reset_session(user_id: UserID = "", session_id: SessionID = ""):
     return json.dumps({"status": f"Message history cleared and archived at {filepath}"})
 
 
-async def main_init(resume: bool = False) -> SessionID:
+async def main_init() -> SessionID:
     global interrupts
     global CONTEXT_SIZE
     """Run the conversation loop, using the provided I/O callbacks."""
@@ -547,16 +547,11 @@ async def main_init(resume: bool = False) -> SessionID:
 
     # emit("info", f"Chat (Ctrl-C to cancel, twice to quit) - URL: {base_url}")
 
-    session_id = "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
-    if resume:
-        session_id = get_last_conversation_session_id()
-
     logger.info(f"Loading model {CURRENT_MODEL}")
     load_model_and_set(CURRENT_MODEL)
     CONTEXT_SIZE = get_context_size()
 
     await asyncio.sleep(3)
-    return session_id
 
 
 async def main(
@@ -613,7 +608,7 @@ async def main(
                 logger.error(f"Stopping llama-server: {e}")
 
 
-async def async_main(client_type: str, resume: bool = False):
+async def async_main(client_type: str, session_id: str | None = None):
     # Import client module based on command line argument
     if client_type == "terminal":
         from clients import terminal as client
@@ -624,7 +619,16 @@ async def async_main(client_type: str, resume: bool = False):
     else:
         raise ValueError(f"Unknown client type: {client_type}")
 
-    session_id = await main_init(resume=resume)
+    resume = False
+    if session_id is not None:
+        resume = True
+    if session_id and session_id == "true":
+        session_id = get_last_conversation_session_id()
+        resume = True
+    elif session_id is None:
+        session_id = "".join(random.choices(string.ascii_lowercase + string.digits, k=8))
+
+    await main_init()
 
     # Expose usage side-channel and context size to the client (ignored by clients that don't use them)
     client.usage_events = usage_events
@@ -664,6 +668,8 @@ async def async_main(client_type: str, resume: bool = False):
             client.stop()
         except Exception as e:
             logger.warning(f"Error during client cleanup: {e}")
+        if session_id and session_id != "true":
+            print(f"Your session id: {session_id}")
 
 
 if __name__ == "__main__":
@@ -680,8 +686,8 @@ if __name__ == "__main__":
 
     if len(sys.argv) > 1:
         config["client"] = sys.argv[1]
-    resume: bool = False
+    session_id: str | None = None
     if len(sys.argv) > 2:
-        resume = sys.argv[2] == "true"
+        session_id = sys.argv[2]
     # Run the async function with proper cancellation handling
-    asyncio.run(async_main(config.get("client", "terminal"), resume))
+    asyncio.run(async_main(config.get("client", "terminal"), session_id))
