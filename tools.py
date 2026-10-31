@@ -148,6 +148,16 @@ Usage:
             msg += "\n\nDid you mean one of these?\n" + "\n".join(suggestions)
         return json.dumps({"status": "error", "description": msg})
 
+    if offset is not None:
+        try:
+            offset = int(offset)
+        except (TypeError, ValueError):
+            return json.dumps({"status": "error", "description": f"Invalid offset: {offset!r}"})
+    if limit is not None:
+        try:
+            limit = int(limit)
+        except (TypeError, ValueError):
+            return json.dumps({"status": "error", "description": f"Invalid limit: {limit!r}"})
     start = (offset or 1) - 1
     count_limit = limit or DEFAULT_READ_LIMIT
 

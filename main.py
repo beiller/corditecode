@@ -16,7 +16,9 @@ from collections.abc import Iterator
 from typing import AsyncIterator, Callable, get_type_hints, Protocol, TypedDict
 import random
 import string
+import types
 from datetime import datetime
+from typing import Union
 
 # Load environment variables with priority order
 # 1. .env.defaults
@@ -134,6 +136,15 @@ from conversation import (
 _TYPE_MAP = {str: "string", int: "integer", float: "number", bool: "boolean"}
 
 
+def _resolve_type(t):
+    """Collapse Optional/union annotations (e.g. `int | None`) to their non-None member."""
+    origin = getattr(t, "__origin__", None)
+    if origin in (Union, types.UnionType):
+        members = [m for m in t.__args__ if m is not type(None)]
+        return members[0] if len(members) == 1 else str
+    return t
+
+
 def tool_from_function(fn: ToolHandler) -> Tool:
     """Build a Tool from a function's signature and docstring."""
     hints = get_type_hints(fn)
@@ -141,7 +152,7 @@ def tool_from_function(fn: ToolHandler) -> Tool:
     properties = {}
     required = []
     for name, p in sig.parameters.items():
-        properties[name] = {"type": _TYPE_MAP.get(hints.get(name, str), "string")}
+        properties[name] = {"type": _TYPE_MAP.get(_resolve_type(hints.get(name, str)), "string")}
         if p.default is inspect.Parameter.empty:
             required.append(name)
     return make_tool(
@@ -316,7 +327,11 @@ def execute_tool_calls(
             args_short = ", ".join(f"{k}={v!r}" for k, v in args.items())
             if len(args_short) > 200: args_short = args_short[0:200] + "..."
             emit(user_id, "tool", f"{name}({args_short})")
-            output = handler(**args)
+            try:
+                output = handler(**args)
+            except Exception as e:
+                logger.exception(f"Tool {name} failed")
+                output = json.dumps({"error": f"Tool {name} raised an exception: {e}"})
         results.append(make_tool_result_message(tc["id"], output))
     return results
 
