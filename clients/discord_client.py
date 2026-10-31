@@ -102,8 +102,8 @@ async def digest_user_query():
         while inbox:
             message = inbox.pop()
             query_id = get_unique_query_id(message)
-            user_id_mapping[message.author.id] = query_id
-            await queue_query(message.author.id, message.content)
+            user_id_mapping[str(message.author.id)] = query_id
+            await queue_query(str(message.author.id), message.content)
         await asyncio.sleep(0.01)
 
 
@@ -134,7 +134,7 @@ class DiscordClient(commands.Bot):
 
         logger.info(f"DM from {message.author}: {message.content}")
         if message.content.lower().strip() == "stop":
-            await set_interrupt(get_unique_query_id(message))
+            await set_interrupt(str(message.author.id))
         else:
             inbox.append(message)
         # Optionally reply to confirm receipt
