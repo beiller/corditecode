@@ -16,6 +16,9 @@ logger = logging.getLogger()
 queue_query = None
 get_response = None
 set_interrupt = None
+usage_events = None
+turn_events = None
+context_size = 16384
 app = None
 _shutdown_event = asyncio.Event()
 
@@ -25,9 +28,20 @@ from textual.containers import VerticalScroll
 
 
 
+MOON_PHASES = ["🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"]
+
 class ChatApp(App):
     STATE_STREAMING = "streaming"
     STATE_IDLE = "idle"
+    CSS = """
+    #stats_bar {
+        border: solid $accent;
+        background: $surface;
+        padding: 0 1;
+        color: $text-muted;
+    }
+    """
+
     async def on_mount(self):
         # This ensures the input is ready for typing immediately
         self.query_one(Input).focus()
@@ -37,12 +51,19 @@ class ChatApp(App):
         await container.mount(Static(f"[grey]Local AI Assistant[/]"))
 
         self.state = ChatApp.STATE_IDLE
+        self.busy = False
+        self.done = False
+        self._frame_idx = 0
+        self._pending: set[str] = set()
+        self._stats_text = f"tokens: - / {context_size}"
 
+        self.set_interval(0.2, self.tick_spinner)
         self.run_worker(write_output())
 
     def compose(self) -> ComposeResult:
         # Use a scrollable container for the chat history
         yield VerticalScroll(id="chat_container")
+        yield Static(f"tokens: - / {context_size}", id="stats_bar")
         yield Input(placeholder="Type here...")
 
 
@@ -51,7 +72,12 @@ class ChatApp(App):
         container = self.query_one("#chat_container")
         await container.mount(Static(f"[bold cyan]You:[/][white] {event.value}[/]"))
         container.scroll_end(animate=False)
-        await queue_query("0", event.value)
+        msg_id = await queue_query("0", event.value)
+        self._pending.add(msg_id)
+        self.busy = True
+        self.done = False
+        self._frame_idx = 0
+        self.render_bar()
         event.input.value = ""
 
 
@@ -74,6 +100,38 @@ class ChatApp(App):
         on_ctrl_c()
 
 
+    def render_bar(self) -> None:
+        if self.busy:
+            frame = MOON_PHASES[self._frame_idx % len(MOON_PHASES)]
+            self._frame_idx += 1
+            prefix = f"{frame} "
+        elif self.done:
+            prefix = "✅ "
+        else:
+            prefix = "  "
+        self.query_one("#stats_bar").update(f"{prefix}{self._stats_text}")
+
+    def tick_spinner(self) -> None:
+        if self.busy:
+            self.render_bar()
+
+    async def turn_done(self, msg_id: str) -> None:
+        self._pending.discard(msg_id)
+        if self._pending:
+            return
+        self.busy = False
+        self.done = True
+        self.render_bar()
+
+    async def update_stats(self, usage: dict) -> None:
+        prompt_tokens = usage.get("prompt_tokens", 0)
+        completion_tokens = usage.get("completion_tokens", 0)
+        total = usage.get("total_tokens", prompt_tokens + completion_tokens)
+        ctx = context_size or 16384
+        pct = (total / ctx * 100) if ctx else 0.0
+        self._stats_text = f"tokens: {total} / {ctx} ({pct:.1f}%) | prompt: {prompt_tokens} completion: {completion_tokens}"
+        self.render_bar()
+
     async def on_llm_text(self, user_id, role, token, chunk):
         """Now you can append tokens without a newline!"""
         if self.state == ChatApp.STATE_IDLE:
@@ -84,7 +142,9 @@ class ChatApp(App):
             else:
                 await self.create_container(markdown=False)
         
-        if self.state == ChatApp.STATE_STREAMING and not chunk and token == "":
+        if not chunk and token == "":
+            # Per-LLM-call end marker (fires between tool calls too) - reset streaming state only.
+            # The checkmark is set by the turn event, which fires once per user turn.
             self.state = ChatApp.STATE_IDLE
             return
 
@@ -118,11 +178,27 @@ async def write_output():
                 )
                 asyncio.run_coroutine_threadsafe(app.on_llm_text(user_id, role, token, chunk), asyncio.get_event_loop())
             except asyncio.TimeoutError:
-                # Check if we should shutdown
-                continue
+                pass
             except asyncio.CancelledError:
                 logger.info("Output writer cancelled")
                 break
+
+            # Drain any usage events that arrived (non-blocking)
+            while usage_events is not None:
+                try:
+                    user_id, usage = usage_events.get_nowait()
+                    asyncio.run_coroutine_threadsafe(app.update_stats(usage), asyncio.get_event_loop())
+                except asyncio.QueueEmpty:
+                    break
+
+            # Drain turn-end events (non-blocking) - one per user message, after the full tool loop
+            while turn_events is not None:
+                try:
+                    msg_id = turn_events.get_nowait()
+                    asyncio.run_coroutine_threadsafe(app.turn_done(msg_id), asyncio.get_event_loop())
+                except asyncio.QueueEmpty:
+                    break
+
             await asyncio.sleep(0.01)
     except Exception as e:
         logger.error(f"Error in write_output: {e}")
