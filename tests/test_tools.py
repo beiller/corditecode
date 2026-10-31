@@ -6,7 +6,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tools import read_file, write_file, edit_file
+from tools import edit_file, read_file, write_file
 
 
 def ok(result: str) -> dict:
@@ -28,7 +28,7 @@ class FileToolsBase(unittest.TestCase):
             data = f.read()
         for bom in (b"\xef\xbb\xbf", b"\xff\xfe", b"\xfe\xff"):
             if data.startswith(bom):
-                return data[len(bom):].decode("utf-8")
+                return data[len(bom) :].decode("utf-8")
         return data.decode("utf-8")
 
 
@@ -123,7 +123,7 @@ class TestWriteFile(FileToolsBase):
         self.assertEqual(self.read_raw(), content)
 
     def test_special_control_and_unicode_edge_chars(self):
-        content = "tab\there\nnull-ish \x0bvertical tab\nzero-width\u200bjoiner\nsurrogate-adjacent \U0001F90A\n"
+        content = "tab\there\nnull-ish \x0bvertical tab\nzero-width\u200bjoiner\nsurrogate-adjacent \U0001f90a\n"
         ok(write_file(self.path, content))
         self.assertEqual(self.read_raw(), content)
 

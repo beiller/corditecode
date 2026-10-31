@@ -14,16 +14,10 @@ def run_command(cmd, description: str, cwd: Path = None):
     """Run a shell command with error handling."""
     print(f"\n📌 {description}")
     print(f"   Command: {' '.join(cmd)}")
-    
+
     try:
-        result = subprocess.run(
-            cmd,
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        print(f"   ✅ Success!")
+        subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, check=True)
+        print("   ✅ Success!")
         return True
     except subprocess.CalledProcessError as e:
         print(f"   ❌ Error: {e}")
@@ -50,30 +44,25 @@ def get_cpu_cores():
 def detect_cuda():
     """Detect if CUDA is available on the system."""
     print("\n🔍 Checking for CUDA support...")
-    
+
     # Check 1: Can we run nvidia-smi? (indicates NVIDIA GPU + drivers)
     try:
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader"],
             capture_output=True,
             text=True,
-            check=True
+            check=True,
         )
         gpu_info = result.stdout.strip()
         print(f"   ✅ NVIDIA GPU detected: {gpu_info.split(',')[0]}")
     except (subprocess.CalledProcessError, FileNotFoundError):
         print("   ⚠️  No NVIDIA GPU or drivers found")
         return False
-    
+
     # Check 2: Is nvcc compiler available? (indicates CUDA toolkit)
     try:
-        result = subprocess.run(
-            ["nvcc", "--version"],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        version_line = result.stdout.strip().split('\n')[-1]
+        result = subprocess.run(["nvcc", "--version"], capture_output=True, text=True, check=True)
+        version_line = result.stdout.strip().split("\n")[-1]
         print(f"   ✅ CUDA Toolkit detected: {version_line}")
         return True
     except (subprocess.CalledProcessError, FileNotFoundError):
@@ -88,7 +77,7 @@ def cleanup_old_build(build_dir: Path):
         print(f"\n🗑️  Removing existing {build_dir.name} directory...")
         try:
             shutil.rmtree(build_dir)
-            print(f"   ✅ Cleaned up old build directory")
+            print("   ✅ Cleaned up old build directory")
         except Exception as e:
             print(f"   ❌ Error removing directory: {e}")
             return False
@@ -116,88 +105,77 @@ def ask_user(question: str) -> bool:
         return True
     while True:
         response = input(f"{question} [Y/n]: ").strip().lower()
-        if response in ('', 'y', 'yes'):
+        if response in ("", "y", "yes"):
             return True
-        elif response in ('n', 'no'):
+        elif response in ("n", "no"):
             return False
         print("   Please enter 'Y' or 'n'")
 
 
 def build_llama():
     """Main function to clone and build llama.cpp."""
-    
+
     # Configuration
     REPO_URL = "https://github.com/ggml-org/llama.cpp.git"
     BUILD_DIR = Path("llama.cpp")
     COMMIT_HASH = "c589f0ed10c643678c4707dd160c21ac7633ebc0"  # Pin to specific commit
-    
+
     print("=" * 60)
     print("🦙 llama.cpp Download & Build Script")
     print("=" * 60)
-    
+
     # Skip rebuild if a working build already exists
     binaries = BUILD_DIR / "build" / "bin"
     if BUILD_DIR.exists():
         if binaries.exists() and any(b.is_file() for b in binaries.iterdir()):
-            print(f"\n\u2705 Existing build found, skipping rebuild.")
+            print("\n\u2705 Existing build found, skipping rebuild.")
             return True
         print(f"\n\u26a0\ufe0f Build directory exists but no binaries found. Delete {BUILD_DIR} to rebuild.")
         return False
-        
+
     # Detect CPU cores for parallel build
     cpu_cores = get_cpu_cores()
     print(f"\n💻 Detected {cpu_cores} CPU cores for parallel compilation")
-    
+
     # Detect CUDA support
     cuda_available = detect_cuda()
-    
+
     if cuda_available:
         print("   🎮 Will enable CUDA GPU acceleration!")
-    
+
     # Step 1: Clone the repository
-    if not run_command(
-        ["git", "clone", REPO_URL, str(BUILD_DIR)],
-        "Cloning llama.cpp repository..."
-    ):
+    if not run_command(["git", "clone", REPO_URL, str(BUILD_DIR)], "Cloning llama.cpp repository..."):
         print("\n❌ Failed to clone repository. Exiting.")
         sys.exit(1)
-    
+
     # Step 2: Checkout pinned commit hash
-    if not run_command(
-        ["git", "checkout", COMMIT_HASH],
-        f"Checking out commit {COMMIT_HASH}...",
-        cwd=BUILD_DIR
-    ):
+    if not run_command(["git", "checkout", COMMIT_HASH], f"Checking out commit {COMMIT_HASH}...", cwd=BUILD_DIR):
         print(f"\n❌ Failed to checkout commit {COMMIT_HASH}. Exiting.")
         sys.exit(1)
-    
+
     # Step 3: Configure build with CMake (with CUDA if available)
     cmake_cmd = ["cmake", "-B", "build"]
     if cuda_available:
         cmake_cmd.extend(["-DGGML_CUDA=ON"])
         print("\n🔧 Enabling CUDA backend in CMake configuration")
-    
-    if not run_command(
-        cmake_cmd,
-        "Configuring build with CMake...",
-        cwd=BUILD_DIR
-    ):
+
+    if not run_command(cmake_cmd, "Configuring build with CMake...", cwd=BUILD_DIR):
         print("\n❌ Failed to configure build. Exiting.")
         sys.exit(1)
-    
+
     # Step 4: Build the project with parallel jobs
     if not run_command(
         ["cmake", "--build", "build", "--config", "Release", "-t", "llama-server", "-j", str(cpu_cores)],
         f"Building llama.cpp with {cpu_cores} parallel jobs (this may take a few minutes)...",
-        cwd=BUILD_DIR
+        cwd=BUILD_DIR,
     ):
         print("\n❌ Failed to build. Exiting.")
         sys.exit(1)
-    
+
     # Step 5: Verify the build
     binaries = BUILD_DIR / "build" / "bin"
     if binaries.exists() and any(binaries.iterdir()):
-        print(f"\n✅ Build completed successfully!")
+        print("\n✅ Build completed successfully!")
         print(f"   Binaries located at: {binaries.absolute()}")
         print("\n📦 Available tools:")
         for binary in sorted(binaries.iterdir()):
@@ -205,7 +183,7 @@ def build_llama():
                 print(f"   - {binary.name}")
     else:
         print("\n⚠️  Build directory exists but no binaries found.")
-    
+
     # Summary
     print("\n" + "=" * 60)
     print("🎉 Done! You can now use llama.cpp tools from the 'build/bin' directory.")
@@ -216,10 +194,10 @@ def build_llama():
         print(f"   {binaries}/llama-server --model your-model.gguf -ngl 99")
     else:
         print("   ⚙️  CPU-only mode (no CUDA detected)")
-    
+
 
 def main():
-    
+
     build_llama()
 
     if ask_user("\nWould you like to download a model now?"):

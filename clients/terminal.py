@@ -1,15 +1,11 @@
-
-import base64
-import re
-from io import BytesIO
-from textual.app import App, ComposeResult
-from textual.widgets import Input, RichLog
-from textual.events import Paste, Key
 import asyncio
-import signal
 import logging
-
 from typing import Callable
+
+from textual.app import App, ComposeResult
+from textual.containers import VerticalScroll
+from textual.events import Key
+from textual.widgets import Input, Markdown, Static
 
 logger = logging.getLogger()
 
@@ -23,12 +19,8 @@ app = None
 _shutdown_event = asyncio.Event()
 
 
-from textual.widgets import Static, Input, Markdown
-from textual.containers import VerticalScroll
-
-
-
 MOON_PHASES = ["🌑", "🌒", "🌓", "🌔", "🌕", "🌖", "🌗", "🌘"]
+
 
 class ChatApp(App):
     STATE_STREAMING = "streaming"
@@ -47,8 +39,8 @@ class ChatApp(App):
         self.query_one(Input).focus()
 
         container = self.query_one("#chat_container")
-        await container.mount(Static(f"[bold cyan]⟡  C H A T[/]"))
-        await container.mount(Static(f"[grey]Local AI Assistant[/]"))
+        await container.mount(Static("[bold cyan]⟡  C H A T[/]"))
+        await container.mount(Static("[grey]Local AI Assistant[/]"))
 
         self.state = ChatApp.STATE_IDLE
         self.busy = False
@@ -66,9 +58,9 @@ class ChatApp(App):
         yield Static(f"tokens: - / {context_size}", id="stats_bar")
         yield Input(placeholder="Type here...")
 
-
     async def on_input_submitted(self, event: Input.Submitted) -> None:
-        if not event.value.strip(): return
+        if not event.value.strip():
+            return
         container = self.query_one("#chat_container")
         await container.mount(Static(f"[bold cyan]You:[/][white] {event.value}[/]"))
         container.scroll_end(animate=False)
@@ -80,12 +72,10 @@ class ChatApp(App):
         self.render_bar()
         event.input.value = ""
 
-
     async def debug(self, text):
         container = self.query_one("#chat_container")
         await container.mount(Static(text))
         container.scroll_end(animate=False)
-
 
     async def create_container(self, markdown=False):
         container = self.query_one("#chat_container")
@@ -93,12 +83,10 @@ class ChatApp(App):
         await container.mount(widget)
         self.current_response = widget
 
-
     def key_control_c(self, event: Key) -> None:
         event.stop()
         event.prevent_default()
         on_ctrl_c()
-
 
     def render_bar(self) -> None:
         if self.busy:
@@ -129,7 +117,9 @@ class ChatApp(App):
         total = usage.get("total_tokens", prompt_tokens + completion_tokens)
         ctx = context_size or 16384
         pct = (total / ctx * 100) if ctx else 0.0
-        self._stats_text = f"tokens: {total} / {ctx} ({pct:.1f}%) | prompt: {prompt_tokens} completion: {completion_tokens}"
+        self._stats_text = (
+            f"tokens: {total} / {ctx} ({pct:.1f}%) | prompt: {prompt_tokens} completion: {completion_tokens}"
+        )
         self.render_bar()
 
     async def on_llm_text(self, user_id, role, token, chunk):
@@ -141,7 +131,7 @@ class ChatApp(App):
                 await self.create_container(markdown=True)
             else:
                 await self.create_container(markdown=False)
-        
+
         if not chunk and token == "":
             # Per-LLM-call end marker (fires between tool calls too) - reset streaming state only.
             # The checkmark is set by the turn event, which fires once per user turn.
@@ -172,10 +162,7 @@ async def write_output():
         while not _shutdown_event.is_set():
             try:
                 # Use a timeout to check shutdown event periodically
-                user_id, role, token, chunk = await asyncio.wait_for(
-                    get_response(),
-                    timeout=0.5
-                )
+                user_id, role, token, chunk = await asyncio.wait_for(get_response(), timeout=0.5)
                 asyncio.run_coroutine_threadsafe(app.on_llm_text(user_id, role, token, chunk), asyncio.get_event_loop())
             except asyncio.TimeoutError:
                 pass
@@ -206,7 +193,7 @@ async def write_output():
 
 
 def on_ready():
-    #print_prompt()
+    # print_prompt()
     pass
 
 
@@ -218,8 +205,8 @@ def stop():
 
 def on_ctrl_c():
     global queue_query, get_response, set_interrupt
-    #print("\nCtrl+C ignored, still running. Use kill or another method to stop.")
-    asyncio.run_coroutine_threadsafe(set_interrupt("0"), loop)
+    # print("\nCtrl+C ignored, still running. Use kill or another method to stop.")
+    asyncio.run_coroutine_threadsafe(set_interrupt("0"), asyncio.get_running_loop())
 
 
 async def run_ui():
@@ -234,7 +221,7 @@ async def init(_queue_query: Callable, _get_response: Callable, _set_interrupt: 
     queue_query = _queue_query
     get_response = _get_response
     set_interrupt = _set_interrupt
-    
+
     # Start both tasks with proper cancellation handling
     try:
         await run_ui()
