@@ -2,6 +2,7 @@ import asyncio
 import logging
 from typing import Callable
 
+from rich.markup import escape
 from textual.app import App, ComposeResult
 from textual.containers import VerticalScroll
 from textual.events import Key
@@ -62,7 +63,7 @@ class ChatApp(App):
         if not event.value.strip():
             return
         container = self.query_one("#chat_container")
-        await container.mount(Static(f"[bold cyan]You:[/][white] {event.value}[/]"))
+        await container.mount(Static(f"[bold cyan]You:[/][white] {escape(event.value)}[/]"))
         container.scroll_end(animate=False)
         msg_id = await queue_query("0", event.value)
         self._pending.add(msg_id)
@@ -142,7 +143,7 @@ class ChatApp(App):
             self.current_text += token
             new_content = self.current_text
         else:
-            new_content = f"[bold magenta]{role} 🤖:[/][white] {token}[/]"
+            new_content = f"[bold magenta]{role} 🤖:[/][white] {escape(token)}[/]"
 
         self.current_response.update(new_content)
         container = self.query_one("#chat_container")
