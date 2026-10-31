@@ -199,7 +199,7 @@ async def stream_chat_completion(
     system_content = SYSTEM_MD.read_text() if SYSTEM_MD.exists() else ""
 
     # Add dynamic context to system prompt (keep stable across calls so the server's prompt cache can be reused)
-    session_context = f"\n\nActive session: {session_id}"
+    session_context = f"\n\nActive session: {session_id}\nCurrent user id: {user_id}\n\n"
     system_content += session_context
 
     # Strip timestamps before sending to LLM API
