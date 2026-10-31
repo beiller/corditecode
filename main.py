@@ -200,8 +200,8 @@ async def stream_chat_completion(
     """Send a streaming chat completion request, yielding SSE chunks asynchronously."""
     system_content = SYSTEM_MD.read_text() if SYSTEM_MD.exists() else ""
     
-    # Add dynamic context to system prompt
-    session_context = f"\n\nCurrent time: {datetime.now().isoformat()}\nCurrent working directory: {os.getcwd()}\nActive session: {session_id}Active user_id: {user_id}\n\n"
+    # Add dynamic context to system prompt (keep stable across calls so the server's prompt cache can be reused)
+    session_context = f"\n\nActive session: {session_id}Active user_id: {user_id}\n\n"
     system_content += session_context
 
     # Strip timestamps before sending to LLM API
