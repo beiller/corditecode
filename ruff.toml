@@ -1,0 +1,30 @@
+# Ruff configuration - strict baseline
+# Docs: https://docs.astral.sh/ruff/
+
+line-length = 120
+target-version = "py310"
+
+extend-exclude = [
+    "llama.cpp",
+    "venv",
+    "models",
+    "opencode",
+]
+
+[lint]
+# E/W: pycodestyle, F: pyflakes (real bugs), I: isort (import ordering)
+select = ["E", "W", "F", "I"]
+ignore = [
+    # E501 line-too-long: ruff format does not wrap lines; keep manual control
+    "E501",
+]
+
+[lint.isort]
+known-first-party = ["main", "main_types", "conversation", "tools", "search", "download_model"]
+
+[lint.per-file-ignores]
+# main.py must load .env before module-level env reads (CURRENT_MODEL etc.) - intentional ordering
+"main.py" = ["E402"]
+
+[format]
+quote-style = "double"

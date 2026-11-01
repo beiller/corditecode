@@ -38,7 +38,15 @@ def fts_highlight(text, terms_str):
     return (prefix + " " + text).replace("\n", " ")[:1024]
 
 
+def fts_query(term: str) -> str:
+    """Escape a raw search term into a safe FTS5 MATCH query (quoted words)."""
+    words = [w.replace('"', '""') for w in term.split() if w]
+    return " ".join(f'"{w}"' for w in words)
+
+
 def search(term: str) -> str:
+    if not fts_query(term):
+        return json.dumps({"query": term, "count": 0, "matches": []}, indent=2)
     conn = sqlite3.connect(DB)
     c = conn.cursor()
     c.executescript("""DROP TABLE IF EXISTS fts_docs; DROP TABLE IF EXISTS docs""")
@@ -68,7 +76,7 @@ def search(term: str) -> str:
         snippet(d.content, ?) as snippets_text
         FROM fts_docs JOIN docs d ON d.id = fts_docs.rowid
         WHERE fts_docs MATCH ? ORDER BY rank""",
-        (term, term, term),
+        (term, term, fts_query(term)),
     )
 
     matches = []

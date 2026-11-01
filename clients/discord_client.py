@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 import time
-from typing import Callable, Tuple
+from typing import Callable, Optional, Tuple
 
 import discord
 from discord.ext import commands
@@ -13,12 +13,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 
 client = None
-outbox = []
+outbox: list[tuple[str, str, str]] = []  # (user_id, action, text) where action is "status" | "message"
 inbox = []
 
 queue_query: Callable[[str, str], None] = None
 get_response: Callable[None, Tuple[str, str, str, bool]] = None
 set_interrupt: Callable[[str], None] = None
+
+STATUS_ROLES = {"tool", "error", "info"}
+MAX_STATUS_LEN = 1900
 
 
 def rate_limit(calls, period=10):
@@ -39,21 +42,51 @@ def rate_limit(calls, period=10):
 
 
 user_id_mapping = {}
+status_msg_ids: dict[str, str] = {}
 
 
 @rate_limit(10, 10)
-async def reply_rate_limit(user_id: str, message):
+async def send_new_message(user_id: str, message: str) -> Optional[str]:
     if message == "":
         logger.warning("(discord) discarded empty message")
-        return
+        return None
     global client, user_id_mapping
-    channel_id, message_id = user_id_mapping[user_id].split(":")
+    channel_id, _ = user_id_mapping[user_id].split(":")
     channel = await client.fetch_channel(channel_id)
-    original_message = await channel.fetch_message(message_id)
     try:
-        await original_message.reply(message)
+        sent = await channel.send(message)
+        return str(sent.id)
     except Exception as e:
         logger.error(f"(discord) error sending message: {e}")
+        return None
+
+
+@rate_limit(10, 10)
+async def edit_message(user_id: str, message_id: str, text: str) -> Optional[str]:
+    global client
+    channel_id = user_id_mapping[user_id].split(":")[0]
+    channel = await client.fetch_channel(channel_id)
+    try:
+        original_message = await channel.fetch_message(int(message_id))
+        await original_message.edit(content=text)
+        return message_id
+    except Exception as e:
+        logger.error(f"(discord) error editing message: {e}")
+        return None
+
+
+async def post_status(user_id: str, text: str) -> None:
+    """Update the rolling status message in place; create a new one if needed."""
+    msg_id = status_msg_ids.get(user_id)
+    if msg_id is not None:
+        if await edit_message(user_id, msg_id, text):
+            return
+    # No existing status message (or edit failed): post a fresh one
+    if len(text) > MAX_STATUS_LEN:
+        text = text[-MAX_STATUS_LEN:]
+    new_id = await send_new_message(user_id, text)
+    if new_id:
+        status_msg_ids[user_id] = new_id
 
 
 def split_message(message: str, chunk_size: int = 1500) -> list[str]:
@@ -72,20 +105,16 @@ async def message_poll():
 
     while True:
         if outbox:
-            for id_message in outbox:
-                query_id, role, message = id_message
-                # Send the full message without chunking
-                # Discord allows up to 2000 characters per message
-                if client and not client.is_closed() and len(message) > 0:
-                    # Non assistant responses can be truncated
-                    if role != "assistant" and len(message) > 200:
-                        message = message[0:200] + "..."
-
-                    # Split long messages into chunks of 1500 characters
-                    chunks = split_message(message, 1500)
-                    for chunk in chunks:
-                        await reply_rate_limit(query_id, chunk)
-                outbox = []
+            for user_id, action, text in outbox:
+                if client and not client.is_closed() and len(text) > 0:
+                    if action == "status":
+                        await post_status(user_id, text)
+                    else:
+                        # New message (assistant reply); reset the rolling status
+                        for chunk in split_message(text, 1500):
+                            await send_new_message(user_id, chunk)
+                        status_msg_ids.pop(user_id, None)
+            outbox = []
         await asyncio.sleep(0.1)
 
 
@@ -115,8 +144,15 @@ async def digest_agent_response():
         if chunk:
             message += token
         else:
-            outbox.append((user_id, role, message + token))
+            text = message + token
             message = ""
+            if not text:
+                continue
+            if role in STATUS_ROLES:
+                line = text[:200] + ("..." if len(text) > 200 else "")
+                outbox.append((user_id, "status", line))
+            elif role == "assistant":
+                outbox.append((user_id, "message", text))
 
 
 class DiscordClient(commands.Bot):
