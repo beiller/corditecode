@@ -29,7 +29,7 @@ inbox = []
 
 queue_query: Callable[[str, str], None] = None
 get_response: Callable[None, Tuple[str, str, str, bool]] = None
-set_interrupt = Callable[[str], None] = None
+set_interrupt: Callable[[str], None] = None
 
 
 def rate_limit(calls, period=10):

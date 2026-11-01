@@ -4,9 +4,10 @@ import sqlite3
 import sys
 from pathlib import Path
 
-CONVERSATIONS_DIR = "conversations"
-DB = CONVERSATIONS_DIR + "/conversations.db"
-DIR = Path(CONVERSATIONS_DIR)
+ROOT_DIR = Path(__file__).parent
+CONVERSATIONS_DIR = ROOT_DIR / "conversations"
+DB = CONVERSATIONS_DIR / "conversations.db"
+DIR = CONVERSATIONS_DIR
 CONTEXT_CHARS = 1000
 
 
@@ -83,7 +84,7 @@ def search(term: str) -> str:
     for filename, highlighted, snips in rows:
         matches.append(
             {
-                "filename": CONVERSATIONS_DIR + "/" + filename,
+                "filename": str(CONVERSATIONS_DIR / filename),
                 "highlighted": highlighted if highlighted else "",
                 "snippets_text": snips if snips else "",
             }

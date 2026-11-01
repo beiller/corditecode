@@ -5,7 +5,8 @@ from typing import List
 
 from main_types import Message, SessionID
 
-CONVERSATION_DIR = "./conversations/"
+ROOT_DIR = pathlib.Path(__file__).parent
+CONVERSATION_DIR = ROOT_DIR / "conversations"
 
 
 def approximate_token_count(text: str) -> int:
@@ -27,23 +28,24 @@ def archive_conversation(session_id: str, messages: List[Message]) -> str:
             archive_text += json.dumps(message["tool_calls"]) + "\n"
         archive_text += "\n"
 
-    with open(CONVERSATION_DIR + filename, "w") as fh:
+    with open(CONVERSATION_DIR / filename, "w") as fh:
         fh.write(archive_text)
 
-    return CONVERSATION_DIR + filename
+    return str(CONVERSATION_DIR / filename)
 
 
 def write_conversation(session_id: str, messages: List[Message]) -> None:
-    with open(CONVERSATION_DIR + session_id + ".json", "w") as fh:
+    CONVERSATION_DIR.mkdir(parents=True, exist_ok=True)
+    with open(CONVERSATION_DIR / f"{session_id}.json", "w") as fh:
         json.dump(messages, fh)
 
 
 def read_conversation(session_id: str) -> List[Message]:
-    with open(CONVERSATION_DIR + session_id + ".json") as fh:
+    with open(CONVERSATION_DIR / f"{session_id}.json") as fh:
         return json.load(fh)
 
 
 def get_last_conversation_session_id() -> SessionID:
-    files = [f for f in pathlib.Path(CONVERSATION_DIR).iterdir() if f.is_file() and f.name.endswith(".json")]
+    files = [f for f in CONVERSATION_DIR.iterdir() if f.is_file() and f.name.endswith(".json")]
     session_id: SessionID = max(files, key=lambda f: f.stat().st_mtime).name.split("/")[-1].split(".")[0]
     return session_id

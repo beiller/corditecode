@@ -58,20 +58,23 @@ def is_safe(cmd: str) -> tuple[bool, str | None]:
     return True, None
 
 
-def run_bash(command: str, allow_unsafe_commands=False) -> str:
+def run_bash(command: str, allow_unsafe_commands: bool = False) -> str:
     """Run a shell command and return its output.
     - Do not allow unsafe commands unless specifically granted permission.
     - Only if you have got explicit consent from the user, use `allow_unsafe_commands=True`
     - This will run in bash, and the limit is ~10kb so try to limit verbose output
     """
     # MAX_RETURN_CHARS = 10_000
-    if not allow_unsafe_commands and not is_safe(command):
-        return {
-            "stdout": "",
-            "stderr": "",
-            "returncode": None,
-            "error": "Permission denied. Ask the user's permission to run this command, and if granted, call this function again using allow_unsafe_commands=True",
-        }
+    safe, blocked_pattern = is_safe(command)
+    if not allow_unsafe_commands and not safe:
+        return json.dumps(
+            {
+                "stdout": "",
+                "stderr": "",
+                "returncode": None,
+                "error": f"Permission denied (blocked pattern: {blocked_pattern}). Ask the user's permission to run this command, and if granted, call this function again using allow_unsafe_commands=True",
+            }
+        )
     try:
         result = subprocess.run(
             command,

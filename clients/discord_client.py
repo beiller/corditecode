@@ -28,13 +28,13 @@ def rate_limit(calls, period=10):
     def decorator(func):
         timestamps = []
 
-        def wrapper(*args, **kwargs):
-            now = time.time()
+        async def wrapper(*args, **kwargs):
+            now = time.monotonic()
             timestamps[:] = [t for t in timestamps if now - t < period]
             if len(timestamps) >= calls:
-                time.sleep(period - (now - timestamps[0]))
-            timestamps.append(time.time())
-            return func(*args, **kwargs)
+                await asyncio.sleep(period - (now - timestamps[0]))
+            timestamps.append(time.monotonic())
+            return await func(*args, **kwargs)
 
         return wrapper
 

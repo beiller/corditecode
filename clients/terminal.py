@@ -162,6 +162,13 @@ class ChatApp(App):
             new_content = f"[bold magenta]{role} 🤖:[/][white] {escape(token)}[/]"
 
         self.current_response.update(new_content)
+        container = self.query_one("#chat_container")
+        # Follow the stream only if the user is at the bottom (half-line
+        # epsilon absorbs float noise from Textual's own pinning);
+        # scroll_end also re-asserts the anchor, so follow survives any
+        # interaction that released it (wheel, scrollbar, widget focus).
+        if container.scroll_y + 0.5 >= container.max_scroll_y:
+            container.scroll_end(animate=False)
 
     # async def on_paste(self, event: Paste) -> None:
     #     file_path = event.text.strip().replace("file://", "")
