@@ -37,8 +37,18 @@ except ImportError:
     if "LLAMA_BASE_URL" not in os.environ:
         os.environ["LLAMA_BASE_URL"] = "http://127.0.0.1:8080"
 import logging
+from logging.handlers import RotatingFileHandler
 
-logging.basicConfig(level=logging.INFO)
+LOG_FILE = pathlib.Path(__file__).parent / "agent1.log"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    handlers=[
+        RotatingFileHandler(LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=3),
+        logging.StreamHandler(),
+    ],
+)
 logger = logging.getLogger()
 
 
@@ -114,6 +124,7 @@ def get_context_size() -> int:
 # Types – Chat Completions API
 # ---------------------------------------------------------------------------
 
+from compaction import compact_messages, compaction_target, compaction_trigger, context_token_count
 from conversation import (
     approximate_token_count,
     archive_conversation,
@@ -316,7 +327,9 @@ def emit(user_id: UserID, role: str, content: str, chunk: bool = False) -> None:
     responses.put_nowait((user_id, role, content, chunk))
 
 
-def execute_tool_calls(assistant_msg: Message, registry: dict[str, ToolHandler], user_id: UserID) -> list[Message]:
+async def execute_tool_calls(
+    assistant_msg: Message, registry: dict[str, ToolHandler], user_id: UserID
+) -> list[Message]:
     """Return the assistant message + one tool-result message per call."""
     tool_calls: list[ToolCallRef] = assistant_msg.get("tool_calls", [])
     if not tool_calls:
@@ -336,7 +349,11 @@ def execute_tool_calls(assistant_msg: Message, registry: dict[str, ToolHandler],
                 args_short = args_short[0:200] + "..."
             emit(user_id, "tool", f"{name}({args_short})")
             try:
-                output = handler(**args)
+                result = handler(**args)
+                if inspect.iscoroutine(result):
+                    output = await result
+                else:
+                    output = result
             except Exception as e:
                 logger.exception(f"Tool {name} failed")
                 output = json.dumps({"error": f"Tool {name} raised an exception: {e}"})
@@ -362,6 +379,7 @@ def build_tools() -> tuple[list[Tool], dict[str, ToolHandler]]:
         tool_from_function(list_models),
         tool_from_function(search_model),
         tool_from_function(reset_session),
+        tool_from_function(compact_session),
         tool_from_function(change_working_directory),
     ]
     registry: dict[str, ToolHandler] = {
@@ -376,6 +394,7 @@ def build_tools() -> tuple[list[Tool], dict[str, ToolHandler]]:
         "list_models": list_models,
         "search_model": search_model,
         "reset_session": reset_session,
+        "compact_session": compact_session,
     }
     skill_tools, skill_registry = load_skills(SKILLS_DIR)
     tools.extend(skill_tools)
@@ -402,7 +421,7 @@ async def run_tool_loop(base_url: str, user_id: UserID, messages: List[Message],
         if usage is not None:
             usage_events.put_nowait((user_id, usage))
         emit(user_id, "assistant", "", False)  # send a final empty message so the client knows the end of message.
-        tool_msgs = execute_tool_calls(assistant_msg, registry, user_id)
+        tool_msgs = await execute_tool_calls(assistant_msg, registry, user_id)
 
         if not tool_msgs:
             text = assistant_msg.get("content") or ""
@@ -453,19 +472,9 @@ async def _handle_message_inner(user_input: str, base_url: str, user_id: UserID,
         base_url, user_id, messages, session_id
     )
 
-    if approximate_token_count(json.dumps(messages)) > int(CONTEXT_SIZE * 0.7):
+    if context_token_count(messages) > compaction_trigger(CONTEXT_SIZE):
         logger.info("Compacting conversation")
-        filename = archive_conversation(session_id, messages)
-        new_messages = [
-            {
-                "role": "assistant",
-                "content": f"The previous conversation was archived to {filename}",
-                "timestamp": datetime.now().isoformat(),
-            },
-            *messages[-4:],
-        ]
-        messages.clear()
-        messages.extend(new_messages)
+        await compact_messages(base_url, messages, session_id, CONTEXT_SIZE, CURRENT_MODEL)
         size = approximate_token_count(json.dumps(messages))
         logger.info(f"Context size is {size} of {CONTEXT_SIZE}")
 
@@ -531,6 +540,17 @@ def reset_session(user_id: UserID = "", session_id: SessionID = ""):
     return json.dumps({"status": f"Message history cleared and archived at {filepath}"})
 
 
+async def compact_session(user_id: UserID = "", session_id: SessionID = ""):
+    "Compact the current conversation to free context space: summarize thinking sections, offload large tool outputs and message chunks to files"
+    base_url = os.getenv("LLAMA_BASE_URL")
+    messages: List[Message] = get_user_messages(user_id)
+    logger.info(f"Compacting session {session_id} on request")
+    await compact_messages(base_url, messages, session_id, CONTEXT_SIZE, CURRENT_MODEL)
+    write_conversation(session_id, messages)
+    size = approximate_token_count(json.dumps(messages))
+    return json.dumps({"status": f"Compaction complete. Context size is {size} of {CONTEXT_SIZE}"})
+
+
 async def main_init() -> SessionID:
     global interrupts
     global CONTEXT_SIZE
@@ -565,6 +585,11 @@ async def main_init() -> SessionID:
     logger.info(f"Loading model {CURRENT_MODEL}")
     load_model_and_set(CURRENT_MODEL)
     CONTEXT_SIZE = get_context_size()
+    trigger = compaction_trigger(CONTEXT_SIZE)
+    target = compaction_target(CONTEXT_SIZE)
+    logger.info(f"Compaction: auto-trigger at {trigger} tokens, shrink-to target {target} tokens")
+    if target >= trigger:
+        logger.warning("Shrink-to target is not below the auto-trigger; auto-compaction will be a no-op")
 
     await asyncio.sleep(3)
 
@@ -598,6 +623,12 @@ async def main(
             if user_input is None:
                 break
             if not user_input.strip():
+                turn_events.put_nowait(msg_id)
+                continue
+            if user_input.strip().lower() == "/compact":
+                logger.info(f"/compact command from {user_id}")
+                result = await compact_session(user_id, session_id)
+                emit(user_id, "info", json.loads(result)["status"])
                 turn_events.put_nowait(msg_id)
                 continue
             try:
