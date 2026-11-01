@@ -141,6 +141,8 @@ async def digest_agent_response():
     message = ""
     while True:
         user_id, role, token, chunk = await get_response()
+        if role == "thinking":
+            continue
         if chunk:
             message += token
         else:

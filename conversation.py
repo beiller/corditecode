@@ -21,6 +21,8 @@ def archive_conversation(session_id: str, messages: List[Message]) -> str:
         archive_text += message["role"] + ":\n"
         if "content" in message and message["content"]:
             archive_text += message["content"] + "\n"
+        if "reasoning_content" in message and message["reasoning_content"]:
+            archive_text += "(thinking) " + message["reasoning_content"] + "\n"
         if "tool_calls" in message and message["tool_calls"]:
             archive_text += json.dumps(message["tool_calls"]) + "\n"
         archive_text += "\n"

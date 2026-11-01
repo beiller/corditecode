@@ -243,6 +243,7 @@ async def consume_stream(
     """Consume streamed chunks, emit tokens, and return the assembled Message and usage."""
     role = "assistant"
     content_parts: list[str] = []
+    reasoning_parts: list[str] = []
     tool_calls_accum: dict[int, ToolCallRef] = {}
     usage: Usage | None = None
 
@@ -262,6 +263,13 @@ async def consume_stream(
             if emit_fn:
                 emit_fn(user_id, role, text, True)
             # hack?
+            await asyncio.sleep(0)
+
+        reasoning = delta.get("reasoning_content")
+        if reasoning:
+            reasoning_parts.append(reasoning)
+            if emit_fn:
+                emit_fn(user_id, "thinking", reasoning, True)
             await asyncio.sleep(0)
 
         for dtc in delta.get("tool_calls", []):
@@ -291,6 +299,9 @@ async def consume_stream(
         msg["content"] = content
     else:
         msg["content"] = None
+    reasoning = "".join(reasoning_parts)
+    if reasoning:
+        msg["reasoning_content"] = reasoning
     if tool_calls_accum:
         msg["tool_calls"] = [tool_calls_accum[i] for i in sorted(tool_calls_accum)]
     return msg, usage
@@ -396,7 +407,9 @@ async def run_tool_loop(base_url: str, user_id: UserID, messages: List[Message],
         if not tool_msgs:
             text = assistant_msg.get("content") or ""
             # Add timestamp when LLM responds
-            assistant_msg_with_ts = {"role": "assistant", "content": text, "timestamp": datetime.now().isoformat()}
+            assistant_msg_with_ts = {k: v for k, v in assistant_msg.items() if k != "tool_calls"}
+            assistant_msg_with_ts["content"] = text
+            assistant_msg_with_ts["timestamp"] = datetime.now().isoformat()
             messages.append(assistant_msg_with_ts)
             return text
 
@@ -413,7 +426,9 @@ async def run_tool_loop(base_url: str, user_id: UserID, messages: List[Message],
             emit(user_id, "info", "too many tool calls, giving up")
             text = assistant_msg.get("content") or ""
             # Add timestamp when LLM responds
-            assistant_msg_with_ts = {"role": "assistant", "content": text, "timestamp": datetime.now().isoformat()}
+            assistant_msg_with_ts = {k: v for k, v in assistant_msg.items() if k != "tool_calls"}
+            assistant_msg_with_ts["content"] = text
+            assistant_msg_with_ts["timestamp"] = datetime.now().isoformat()
             messages.append(assistant_msg_with_ts)
             return text
 

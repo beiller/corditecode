@@ -6,7 +6,7 @@ from rich.markup import escape
 from textual.app import App, ComposeResult
 from textual.containers import VerticalScroll
 from textual.events import Key
-from textual.widgets import Input, Markdown, Static
+from textual.widgets import Collapsible, Input, Markdown, Static
 
 logger = logging.getLogger()
 
@@ -40,6 +40,7 @@ class ChatApp(App):
         self.query_one(Input).focus()
 
         container = self.query_one("#chat_container")
+        container.anchor()
         await container.mount(Static("[bold cyan]⟡  C H A T[/]"))
         await container.mount(Static("[grey]Local AI Assistant[/]"))
 
@@ -129,7 +130,13 @@ class ChatApp(App):
             if chunk:
                 self.state = ChatApp.STATE_STREAMING
                 self.current_text = ""
-                await self.create_container(markdown=True)
+                if role == "thinking":
+                    inner = Static("")
+                    await self.query_one("#chat_container").mount(Collapsible(inner, title="💭 Thinking"))
+                    self.current_response = inner
+                    self.current_text = "[dim italic]"
+                else:
+                    await self.create_container(markdown=True)
             else:
                 await self.create_container(markdown=False)
 
@@ -139,6 +146,15 @@ class ChatApp(App):
             self.state = ChatApp.STATE_IDLE
             return
 
+        if role != "thinking" and chunk and getattr(self, "_thinking_active", False):
+            self.current_response.update(self.current_text + "[/]")
+            await self.create_container(markdown=True)
+            self.current_text = ""
+            self._thinking_active = False
+
+        if role == "thinking" and chunk:
+            self._thinking_active = True
+
         if self.state == ChatApp.STATE_STREAMING:
             self.current_text += token
             new_content = self.current_text
@@ -146,8 +162,6 @@ class ChatApp(App):
             new_content = f"[bold magenta]{role} 🤖:[/][white] {escape(token)}[/]"
 
         self.current_response.update(new_content)
-        container = self.query_one("#chat_container")
-        container.scroll_end(animate=False)
 
     # async def on_paste(self, event: Paste) -> None:
     #     file_path = event.text.strip().replace("file://", "")

@@ -37,6 +37,7 @@ class ToolCallRef(TypedDict):
 class Message(TypedDict, total=False):
     role: str
     content: str | None
+    reasoning_content: str | None
     tool_calls: list[ToolCallRef]
     tool_call_id: str
 
@@ -90,6 +91,7 @@ class DeltaToolCall(TypedDict, total=False):
 class Delta(TypedDict, total=False):
     role: str
     content: str | None
+    reasoning_content: str | None
     tool_calls: list[DeltaToolCall]
 
 
