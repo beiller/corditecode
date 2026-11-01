@@ -196,6 +196,7 @@ def make_tool_result_message(tool_call_id: str, content: str) -> Message:
 ROOT_DIR = pathlib.Path(__file__).parent
 SYSTEM_MD = ROOT_DIR / "SYSTEM.md"
 SKILLS_DIR = ROOT_DIR / "skills"
+LOCAL_SKILLS_DIR = ROOT_DIR / "local_skills"
 
 
 # ---------------------------------------------------------------------------
@@ -399,6 +400,11 @@ def build_tools() -> tuple[list[Tool], dict[str, ToolHandler]]:
     skill_tools, skill_registry = load_skills(SKILLS_DIR)
     tools.extend(skill_tools)
     registry.update(skill_registry)
+
+    local_skill_tools, local_skill_registry = load_skills(LOCAL_SKILLS_DIR)
+    tools.extend(local_skill_tools)
+    registry.update(local_skill_registry)
+
     return tools, registry
 
 

@@ -20,7 +20,7 @@ ignore = [
 ]
 
 [lint.isort]
-known-first-party = ["main", "main_types", "conversation", "tools", "search", "download_model"]
+known-first-party = ["main", "main_types", "conversation", "compaction", "tools", "search", "download_model"]
 
 [lint.per-file-ignores]
 # main.py must load .env before module-level env reads (CURRENT_MODEL etc.) - intentional ordering
